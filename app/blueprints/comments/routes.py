@@ -12,6 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 @comments_bp.route('', methods=['POST'])
 @token_required
 def create_comment():
+    user = request.user_id
     try:
         data = comment_schema.load(request.json)
     except ValidationError as e:
@@ -50,6 +51,7 @@ def view_comments_of_post(post_id):
 
 #Delete comment
 @comments_bp.route('<int:comment_id>', methods=['DELETE'])
+@token_required
 def delete_comment(comment_id):
     user_id = request.user_id
 

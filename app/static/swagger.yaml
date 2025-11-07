@@ -1,21 +1,1363 @@
+
 swagger: '2.0'
 info:
-  title: "Gapp'd Social Media API"
-  description: "Used to connect motorcycle riders with eachother"
+  title: "Gappd Social API"
+  description: "Used to manage core social features: users, posts, comments, events, photos"
   version: "0.0.1"
 
-host: "localhost:8000" #During development my API is served on my local host (will change when we go to prod)
+host: "gappd-backend.onrender.com" # During development my API is served on localhost (will change when we go to prod)
 schemes:
-  - "http"
+  - "https"
 consumes:
-  - "application/json" #recieves json data
+  - "application/json" # receives json data
 produces:
-  - "application/json" #produces json data
+  - "application/json" # produces json data
 
-securityDefinitions: #Describing how to add token auth to the endpoints
+securityDefinitions: # Describing how to add token auth to the endpoints
   bearerAuth:
     type: apiKey
     name: Authorization
     in: header
 
-paths:
+paths: # Information about our routes
+#============== Users ==================
+  /users/login:
+    post:
+      tags:
+        - Users
+      summary: "Login endpoint (generates a token)"
+      description: "Validates user credentials (email and password), and produces a user specific token."
+      parameters:
+        - in: "body"
+          name: "body"
+          description: "Login Credentials"
+          required: true
+          schema:
+            $ref: "#/definitions/UserLoginCredentials"
+      responses:
+        200:
+          description: "Login Successful"
+          schema:
+            $ref: "#/definitions/LoginResponse"
+          examples:
+            application/json:
+              message: "Welcome User"
+              token: "eyJhbGciOiJ..."
+              id: 1
+
+  /users:
+    post:
+      tags:
+        - Users
+      summary: "Register User"
+      description: "Send in user info to create a user profile that will be stored in the database."
+      parameters:
+        - in: "body"
+          name: "body"
+          description: "New User Information"
+          required: true
+          schema:
+            $ref: "#/definitions/UserInput"
+      responses:
+        201:
+          description: "Creation Successful"
+          schema:
+            $ref: "#/definitions/UserResponse"
+          examples:
+            application/json:
+              id: 1
+              first_name: "Jane"
+              last_name: "Doe"
+              email: "jane@test.com"
+              username: "janedoe"
+
+  /users/{user_id}:
+    get:
+      tags:
+        - Users
+      summary: "Get a single user (public profile)"
+      parameters:
+        - in: "path"
+          name: "user_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Successfully Retrieved User"
+          schema:
+            $ref: "#/definitions/UserResponse"
+
+  /users/me:
+    get:
+      tags:
+        - Users
+      summary: "View self"
+      description: "Returns the currently authenticated user profile"
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Successfully Retrieved Self"
+          schema:
+            $ref: "#/definitions/UserResponse"
+
+    put:
+      tags:
+        - Users
+      summary: "Update User"
+      description: "Endpoint to update a user, requires a token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "body"
+          name: "body"
+          description: "User Updates"
+          required: true
+          schema:
+            $ref: "#/definitions/UserUpdate"
+      responses:
+        200:
+          description: "Update Successful"
+          schema:
+            $ref: "#/definitions/UserResponse"
+
+    delete:
+      tags:
+        - Users
+      summary: "Delete User"
+      description: "Delete the authenticated user, requires a token"
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Deleted User"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  /users/search:
+    get:
+      tags:
+        - Users
+      summary: "Search user by username"
+      description: "Endpoint to find a user by exact username"
+      parameters:
+        - in: "query"
+          name: "username"
+          type: "string"
+          required: true
+      responses:
+        200:
+          description: "Successfully Retrieved User by Username"
+          schema:
+            type: object
+            properties:
+              id:
+                type: integer
+              username:
+                type: string
+              profile_photo_id:
+                type: integer
+
+  /users/{target_id}/follow:
+    post:
+      tags:
+        - Follows
+      summary: "Follow a user"
+      description: "Authenticated user follows another user"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "target_id"
+          type: "integer"
+          required: true
+      responses:
+        201:
+          description: "Successfully Followed"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+    delete:
+      tags:
+        - Follows
+      summary: "Unfollow a user"
+      description: "Authenticated user unfollows another user"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "target_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Successfully Unfollowed"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  /users/{user_id}/followers:
+    get:
+      tags:
+        - Follows
+      summary: "List followers"
+      parameters:
+        - in: "path"
+          name: "user_id"
+          type: "integer"
+          required: true
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Followers"
+          schema:
+            $ref: "#/definitions/UsersPageResponse"
+
+  /users/{user_id}/following:
+    get:
+      tags:
+        - Follows
+      summary: "List following"
+      parameters:
+        - in: "path"
+          name: "user_id"
+          type: "integer"
+          required: true
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Following"
+          schema:
+            $ref: "#/definitions/UsersPageResponse"
+
+  /users/me/avatar:
+    post:
+      tags:
+        - Users
+      summary: "Upload profile picture"
+      description: "Upload a profile picture for the authenticated user"
+      security:
+        - bearerAuth: []
+      consumes:
+        - "multipart/form-data"
+      parameters:
+        - in: "formData"
+          name: "photo"
+          type: "file"
+          description: "Image file to upload"
+          required: true
+      responses:
+        201:
+          description: "Successfully Updated Profile Picture"
+          schema:
+            $ref: "#/definitions/ProfilePhotoUploadResponse"
+
+    delete:
+      tags:
+        - Users
+      summary: "Delete profile picture"
+      description: "Remove the profile picture for the authenticated user"
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Successfully Removed Profile Picture"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  /users/{user_id}/avatar:
+    get:
+      tags:
+        - Users
+      summary: "Get profile picture"
+      description: "Returns the binary image for a user's profile picture"
+      produces:
+        - "image/jpeg"
+        - "image/png"
+      parameters:
+        - in: "path"
+          name: "user_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Profile Picture Stream"
+
+  #=================== Posts =====================
+
+  /posts:
+    post:
+      tags:
+        - Posts
+      summary: "Create Post"
+      description: "Create a post with optional photos; accepts uploaded files and/or existing photo_ids"
+      security:
+        - bearerAuth: []
+      consumes:
+        - "multipart/form-data"
+      parameters:
+        - in: "formData"
+          name: "caption"
+          type: "string"
+          required: false
+        - in: "formData"
+          name: "location"
+          type: "string"
+          required: false
+        - in: "formData"
+          name: "photo_ids"
+          type: "array"
+          items:
+            type: "string"
+          collectionFormat: "multi"
+          required: false
+        - in: "formData"
+          name: "files"
+          type: "array"
+          items:
+            type: "file"
+          collectionFormat: "multi"
+          required: false
+      responses:
+        201:
+          description: "Creation Successful"
+          schema:
+            $ref: "#/definitions/PostResponse"
+
+  /posts/search:
+    get:
+      tags:
+        - Posts
+      summary: "Search posts by caption keywords"
+      description: "Endpoint to receive an array of posts matching a caption keyword with pagination"
+      parameters:
+        - in: "query"
+          name: "query_params"
+          type: "string"
+          required: true
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Posts"
+          schema:
+            $ref: "#/definitions/PostsPageResponse"
+
+  /posts/{post_id}:
+    get:
+      tags:
+        - Posts
+      summary: "Get a single post"
+      parameters:
+        - in: "path"
+          name: "post_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Successfully Retrieved Post"
+          schema:
+            $ref: "#/definitions/PostResponse"
+
+    put:
+      tags:
+        - Posts
+      summary: "Update Post"
+      description: "Update a post; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "post_id"
+          type: "integer"
+          required: true
+        - in: "body"
+          name: "body"
+          description: "Post Updates"
+          required: true
+          schema:
+            $ref: "#/definitions/PostUpdate"
+      responses:
+        200:
+          description: "Update Successful"
+          schema:
+            $ref: "#/definitions/PostResponse"
+
+    delete:
+      tags:
+        - Posts
+      summary: "Delete a post"
+      description: "Delete a post; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "post_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Deleted Post"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  /posts/by-user/{user_id}:
+    get:
+      tags:
+        - Posts
+      summary: "View all posts of a user"
+      parameters:
+        - in: "path"
+          name: "user_id"
+          type: "integer"
+          required: true
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved User Posts"
+          schema:
+            $ref: "#/definitions/PostsPageResponse"
+
+  /posts/feed:
+    get:
+      tags:
+        - Posts
+      summary: "View feed (from followed users)"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Feed"
+          schema:
+            $ref: "#/definitions/PostsPageResponse"
+
+  /posts/{post_id}/like:
+    post:
+      tags:
+        - PostLikes
+      summary: "Like a post"
+      description: "Like a post, requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "post_id"
+          type: "integer"
+          required: true
+      responses:
+        201:
+          description: "Liked Post"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+    delete:
+      tags:
+        - PostLikes
+      summary: "Unlike a post"
+      description: "Unlike a post, requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "post_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Unliked Post"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  /posts/{post_id}/likes:
+    get:
+      tags:
+        - PostLikes
+      summary: "List users who liked a post"
+      parameters:
+        - in: "path"
+          name: "post_id"
+          type: "integer"
+          required: true
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Likes"
+          schema:
+            $ref: "#/definitions/UsersPageResponse"
+
+  #==================== Comments ======================
+
+  /comments:
+    post:
+      tags:
+        - Comments
+      summary: "Create Comment"
+      description: "Create a comment on a post; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "body"
+          name: "body"
+          description: "New Comment Information"
+          required: true
+          schema:
+            $ref: "#/definitions/CommentInput"
+      responses:
+        201:
+          description: "Creation Successful"
+          schema:
+            $ref: "#/definitions/CommentResponse"
+
+  /comments/by-post/{post_id}:
+    get:
+      tags:
+        - Comments
+      summary: "View all comments in a post"
+      parameters:
+        - in: "path"
+          name: "post_id"
+          type: "integer"
+          required: true
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Comments"
+          schema:
+            $ref: "#/definitions/CommentsPageResponse"
+
+  /comments/{comment_id}:
+    put:
+      tags:
+        - Comments
+      summary: "Update Comment"
+      description: "Update a comment; author only; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "comment_id"
+          type: "integer"
+          required: true
+        - in: "body"
+          name: "body"
+          description: "Comment Updates"
+          required: true
+          schema:
+            $ref: "#/definitions/CommentUpdate"
+      responses:
+        200:
+          description: "Update Successful"
+          schema:
+            $ref: "#/definitions/CommentResponse"
+
+    delete:
+      tags:
+        - Comments
+      summary: "Delete Comment"
+      description: "Delete a comment; author or owner of the parent post; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "comment_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Successfully Deleted Comment"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  #===================== Event Posts ======================
+
+  /event_posts:
+    post:
+      tags:
+        - EventPosts
+      summary: "Create Event Post"
+      description: "Create a new event post; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "body"
+          name: "body"
+          description: "New Event Post Information"
+          required: true
+          schema:
+            $ref: "#/definitions/EventPostInput"
+      responses:
+        201:
+          description: "Creation Successful"
+          schema:
+            $ref: "#/definitions/EventPostResponse"
+
+    get:
+      tags:
+        - EventPosts
+      summary: "View all event posts"
+      description: "Endpoint to receive an array of event post objects with pagination"
+      parameters:
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Event Posts"
+          schema:
+            $ref: "#/definitions/EventPostsPageResponse"
+
+  /event_posts/{event_post_id}:
+    get:
+      tags:
+        - EventPosts
+      summary: "Get a single event post"
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Successfully Retrieved Event Post"
+          schema:
+            $ref: "#/definitions/EventPostResponse"
+
+    put:
+      tags:
+        - EventPosts
+      summary: "Update Event Post"
+      description: "Update an event post; host only; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+        - in: "body"
+          name: "body"
+          description: "Event Post Updates"
+          required: true
+          schema:
+            $ref: "#/definitions/EventPostUpdate"
+      responses:
+        200:
+          description: "Update Successful"
+          schema:
+            $ref: "#/definitions/EventPostResponse"
+
+    delete:
+      tags:
+        - EventPosts
+      summary: "Delete Event Post"
+      description: "Delete an event post; owner only; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Deleted Event Post"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  /event_posts/me/hosting:
+    get:
+      tags:
+        - EventPosts
+      summary: "Events I host"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved My Hosted Events"
+          schema:
+            $ref: "#/definitions/EventPostsPageResponse"
+
+  /event_posts/{event_post_id}/hosts/{target_id}:
+    post:
+      tags:
+        - EventHosts
+      summary: "Add cohost"
+      description: "Owner can add a cohost to the event; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+        - in: "path"
+          name: "target_id"
+          type: "integer"
+          required: true
+      responses:
+        201:
+          description: "Successfully Added Cohost"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+    delete:
+      tags:
+        - EventHosts
+      summary: "Remove cohost"
+      description: "Owner can remove a cohost; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+        - in: "path"
+          name: "target_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Successfully Removed Cohost"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  /event_posts/{event_post_id}/rsvp:
+    post:
+      tags:
+        - EventRSVPs
+      summary: "RSVP to event"
+      description: "Authenticated user RSVPs to an event; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+      responses:
+        201:
+          description: "Successfully RSVP'd"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+    delete:
+      tags:
+        - EventRSVPs
+      summary: "Remove RSVP"
+      description: "Authenticated user removes their RSVP; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Successfully Removed RSVP"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  /event_posts/{event_post_id}/attendees:
+    get:
+      tags:
+        - EventRSVPs
+      summary: "View event attendees"
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Attendees"
+          schema:
+            $ref: "#/definitions/AttendeesPageResponse"
+
+  /event_posts/search:
+    get:
+      tags:
+        - EventPosts
+      summary: "Search events"
+      description: "Search by free-text and location; filter by datetime range; returns paginated results"
+      parameters:
+        - in: "query"
+          name: "query_params"
+          type: "string"
+          required: false
+        - in: "query"
+          name: "city"
+          type: "string"
+          required: false
+        - in: "query"
+          name: "state"
+          type: "string"
+          required: false
+        - in: "query"
+          name: "country"
+          type: "string"
+          required: false
+        - in: "query"
+          name: "zipcode"
+          type: "string"
+          required: false
+        - in: "query"
+          name: "from"
+          type: "string"
+          format: "date-time"
+          required: false
+        - in: "query"
+          name: "to"
+          type: "string"
+          format: "date-time"
+          required: false
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved Event Posts"
+          schema:
+            $ref: "#/definitions/EventPostsPageResponse"
+
+  /event_posts/me/rsvps:
+    get:
+      tags:
+        - EventRSVPs
+      summary: "View my RSVPs"
+      description: "List events I have RSVP'd to; can filter for upcoming or past; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "query"
+          name: "range"
+          type: "string"
+          enum: ["upcoming","past","all"]
+          required: false
+        - in: "query"
+          name: "page"
+          type: "integer"
+          required: false
+      responses:
+        200:
+          description: "Successfully Retrieved RSVPs"
+          schema:
+            $ref: "#/definitions/EventPostsPageResponse"
+
+  /event_posts/{event_post_id}/cover:
+    post:
+      tags:
+        - EventPosts
+      summary: "Upload event post cover photo"
+      description: "Owner uploads a cover photo for the event; requires token"
+      security:
+        - bearerAuth: []
+      consumes:
+        - "multipart/form-data"
+      parameters:
+        - in: "path"
+          name: "event_post_id"
+          type: "integer"
+          required: true
+        - in: "formData"
+          name: "photo"
+          type: "file"
+          required: true
+      responses:
+        201:
+          description: "Event cover photo updated"
+          schema:
+            $ref: "#/definitions/CoverPhotoUploadResponse"
+
+  #===================== Photos ======================
+ 
+  /photos/upload:
+    post:
+      tags:
+        - Photos
+      summary: "Upload photo to a post"
+      description: "Upload a new photo and associate it with a post; requires token"
+      security:
+        - bearerAuth: []
+      consumes:
+        - "multipart/form-data"
+      parameters:
+        - in: "formData"
+          name: "post_id"
+          type: "integer"
+          required: true
+        - in: "formData"
+          name: "photo"
+          type: "file"
+          required: true
+      responses:
+        201:
+          description: "Upload Successful"
+          schema:
+            $ref: "#/definitions/PhotoUploadResponse"
+
+  /photos/{photo_id}:
+    delete:
+      tags:
+        - Photos
+      summary: "Delete photo"
+      description: "Delete a photo; only owner may delete; requires token"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: "path"
+          name: "photo_id"
+          type: "integer"
+          required: true
+      responses:
+        200:
+          description: "Successfully Deleted Photo"
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+definitions: # Information about the shape of input and output json
+
+  #===================== Users ====================
+
+  UserLoginCredentials:
+    type: object
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+      - email
+      - password
+
+  LoginResponse:
+    type: object
+    properties:
+      message:
+        type: string
+      token:
+        type: string
+      id:
+        type: integer
+
+  UserInput:
+    type: object
+    properties:
+      first_name:
+        type: string
+        example: "Jane"
+      last_name:
+        type: string
+        example: "Doe"
+      email:
+        type: string
+        example: "jane@test.com"
+      username:
+        type: string
+        example: "janedoe"
+      password:
+        type: string
+        example: "123"
+    required:
+      - first_name
+      - last_name
+      - email
+      - username
+      - password
+
+  UserUpdate:
+    type: object
+    properties:
+      first_name:
+        type: string
+      last_name:
+        type: string
+      email:
+        type: string
+      username:
+        type: string
+      password:
+        type: string
+
+  UserResponse:
+    type: object
+    properties:
+      id:
+        type: integer
+      first_name:
+        type: string
+      last_name:
+        type: string
+      email:
+        type: string
+      username:
+        type: string
+      profile_photo_id:
+        type: integer
+
+  UsersPageResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: "#/definitions/UserResponse"
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      pages:
+        type: integer
+
+  ProfilePhotoUploadResponse:
+    type: object
+    properties:
+      message:
+        type: string
+        example: "Successfully updated profile picture"
+      profile_picture:
+        type: object
+        properties:
+          photo_id:
+            type: integer
+          filename:
+            type: string
+          content_type:
+            type: string
+
+  #====================== Posts =========================
+
+  PostInput:
+    type: object
+    properties:
+      caption:
+        type: string
+        example: "A perfect day to ride"
+      location:
+        type: string
+        example: "Irvine, CA"
+
+  PostUpdate:
+    type: object
+    properties:
+      caption:
+        type: string
+      location:
+        type: string
+
+  PostResponse:
+    type: object
+    properties:
+      id:
+        type: integer
+        example: 1
+      user_id:
+        type: integer
+        example: 1
+      caption:
+        type: string
+      location:
+        type: string
+      created_at:
+        type: string
+        format: date-time
+
+  PostsPageResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: "#/definitions/PostResponse"
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      pages:
+        type: integer
+
+  #==================== Comments ====================
+ 
+  CommentInput:
+    type: object
+    properties:
+      post_id:
+        type: integer
+        example: 1
+      user_id:
+        type: integer
+        example: 1
+      text:
+        type: string
+        example: "Nice bike!"
+    required:
+      - post_id
+      - text
+
+  CommentUpdate:
+    type: object
+    properties:
+      text:
+        type: string
+
+  CommentResponse:
+    type: object
+    properties:
+      id:
+        type: integer
+      post_id:
+        type: integer
+      user_id:
+        type: integer
+      text:
+        type: string
+      created_at:
+        type: string
+        format: date-time
+
+  CommentsPageResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: "#/definitions/CommentResponse"
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      pages:
+        type: integer
+
+  #==================== Event Posts & RSVP =====================
+
+  EventPostInput:
+    type: object
+    properties:
+      title:
+        type: string
+        example: "Monsters and Minis Meetup"
+      description:
+        type: string
+        example: "Bike meet for Hayabusas and Groms"
+      city:
+        type: string
+        example: "Long Beach"
+      state:
+        type: string
+        example: "CA"
+      country:
+        type: string
+        example: "USA"
+      zipcode:
+        type: string
+        example: "92712"
+      start_time:
+        type: string
+        format: date-time
+      end_time:
+        type: string
+        format: date-time
+    required:
+      - title
+      - description
+      - start_time
+
+  EventPostUpdate:
+    type: object
+    properties:
+      title:
+        type: string
+      description:
+        type: string
+      city:
+        type: string
+      state:
+        type: string
+      country:
+        type: string
+      zipcode:
+        type: string
+      start_time:
+        type: string
+        format: date-time
+      end_time:
+        type: string
+        format: date-time
+
+  EventPostResponse:
+    type: object
+    properties:
+      id:
+        type: integer
+      title:
+        type: string
+      description:
+        type: string
+      city:
+        type: string
+      state:
+        type: string
+      country:
+        type: string
+      zipcode:
+        type: string
+      start_time:
+        type: string
+        format: date-time
+      end_time:
+        type: string
+        format: date-time
+      cover_photo_id:
+        type: integer
+
+  EventPostsPageResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: "#/definitions/EventPostResponse"
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      pages:
+        type: integer
+
+  AttendeeUser:
+    type: object
+    properties:
+      id:
+        type: integer
+      username:
+        type: string
+      profile_picture:
+        type: string
+
+  AttendeesPageResponse:
+    type: object
+    properties:
+      items:
+        type: array
+        items:
+          $ref: "#/definitions/AttendeeUser"
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      pages:
+        type: integer
+
+  CoverPhotoUploadResponse:
+    type: object
+    properties:
+      message:
+        type: string
+      cover:
+        type: object
+        properties:
+          photo_id:
+            type: integer
+          filename:
+            type: string
+          content_type:
+            type: string
+
+  #================== Photos =====================
+
+  PhotoUploadResponse:
+    type: object
+    properties:
+      message:
+        type: string
+        example: "Upload successful"
+      photo_id:
+        type: integer
+      filename:
+        type: string

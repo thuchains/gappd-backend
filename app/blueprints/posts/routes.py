@@ -48,13 +48,20 @@ def create_post_json():
     db.session.commit()
     return post_schema.jsonify(new_post), 201
 
-#Create post with photos and form fields
-# @posts_bp.route()
 
 #Search post by key words in caption
 @posts_bp.route('/search', methods=['GET'])
 def search_posts():
-    query_params = request.args.get("query_params", "").strip()
+    if request.is_json:
+        payload = request.get_json()
+        query_params = (payload.get("query_params") or "").strip()
+        page = payload.get("page", 1)
+        per_page = payload.get("per_page", 20)
+    else:
+        query_params = request.args.get("query_params", "").strip()
+        page = request.args.get("page", 1)
+        per_page = request.args.get("per_page", 20)
+
     if not query_params:
         return jsonify({"message": "Query parameter is required"}), 400
     
@@ -133,7 +140,9 @@ def get_posts_by_user(user_id):
 
 #Delete post
 @posts_bp.route('/<int:post_id>', methods=['DELETE'])
+@token_required
 def delete_post(post_id):
+    user = request.user_id
     post = db.session.get(Posts, post_id)
     if not post:
         return jsonify({"message": "Post not found"}), 404
@@ -145,7 +154,9 @@ def delete_post(post_id):
 
 #Update post
 @posts_bp.route('/<int:post_id>', methods=['PUT'])
+@token_required
 def update_post(post_id):
+    user = request.user_id
     post = db.session.get(Posts, post_id)
     if not post:
         return jsonify({"message": "Post not found"}), 400
@@ -164,6 +175,7 @@ def update_post(post_id):
 
 #Like a post
 @posts_bp.route('/<int:post_id>/like', methods=['POST'])
+@token_required
 def like_post(post_id):
     user_id = request.user_id
 
@@ -189,6 +201,7 @@ def like_post(post_id):
 
 #Unlike post
 @posts_bp.route('/<int:post_id>/like', methods=['DELETE'])
+@token_required
 def unlike_post(post_id):
     user_id = request.user_id
 

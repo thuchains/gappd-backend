@@ -12,7 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 #Upload photo
-@photos_bp.route('/api/upload', methods=['POST'])
+@photos_bp.route('/upload', methods=['POST'])
 @token_required
 def upload_post_photo(post_id):
     user_id = request.user_id
@@ -56,41 +56,13 @@ def upload_post_photo(post_id):
         db.session.rollback()
         return jsonify({"message": "Upload failed"}), 500
 
-    # file = request.files.get("file")
-    # if not file or not file.filename:
-    #     return jsonify({"message": "File required"}), 400
-    
-    # post_id = request.form.get("post_id", type=int)
-    # event_post_id = request.form.get("event_post_id", type=int)
-
-    # if post_id:
-    #     post = db.session.get(Posts, post_id)
-    #     if not post or post.user_id != user_id:
-    #         return jsonify({"message": "Invalid post_id"}), 400
-        
-    # if event_post_id:
-    #     event = db.session.get(EventPosts, event_post_id)
-    #     if not event:
-    #         return jsonify({"message": "Invalid event_post_id"}), 400
-        
-    # photo = Photos(user_id=user_id, post_id=post_id, filename=secure_filename(file.filename), content_type=file.mimetype, file_data=file.read())
-
-    # db.session.add(photo)
-    # db.session.commit()
-    # return jsonify({
-    #     "id": photo.id,
-    #     "filename": photo.filename,
-    #     "content_type": photo.content_type,
-    #     "upload_date": photo.upload_date.isoformat()
-    # }), 201
-
 
 #Delete photo
-@photos_bp.route('/api/photo/<int:photo_id>', methods=['DELETE'])
+@photos_bp.route('/<int:photo_id>', methods=['DELETE'])
 @token_required
 def delete_photo(photo_id):
     user_id = request.user_id
-    
+
     photo = db.session.get(Photos, photo_id)
     if not photo:
         return jsonify({"message": "Photo not found"}), 404

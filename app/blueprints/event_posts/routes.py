@@ -154,6 +154,7 @@ def remove_cohost(user_id, target_id, event_post_id):
 
 #RSVP event
 @event_posts_bp.route('/<int:event_post_id>/rsvp', methods=['POST'])
+@token_required
 def rsvp_event(event_post_id):
     user_id = request.user_id
 
@@ -172,6 +173,7 @@ def rsvp_event(event_post_id):
 
 #UnRSVP event
 @event_posts_bp.route('/<int:event_post_id>/rsvp', methods=['POST'])
+@token_required
 def unrsvp_event(event_post_id):
     user_id = request.user_id
 
