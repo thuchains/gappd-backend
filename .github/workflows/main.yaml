@@ -16,7 +16,7 @@ jobs:
       - name: Set Up Python
         uses: actions/setup-python@v2
         with:
-          python-version: 3.13.5
+          python-version: 3.14.0
 
       - name: Create Virtual Environment
         run: |
@@ -32,8 +32,8 @@ jobs:
         run: |
           echo "Python Version: $(python --version)"
           echo "Working Directory: $(pwd)"
-          echo "Contents of Working Directory: $(1s-1)"
-          echo "Contents of site-packages: $(1s-1 venv/lib/python*/site-packages)"
+          echo "Contents of Working Directory: $(ls-l)"
+          echo "Contents of site-packages: $(ls-l venv/lib/python*/site-packages)"
 
   # test:
   #   needs: build #means that we need the build job to complete before we run our tests
@@ -63,7 +63,7 @@ jobs:
 
 
   deploy:
-    needs: test 
+    needs: build 
     runs-on: ubuntu-latest
 
     steps:
@@ -73,7 +73,7 @@ jobs:
       - name: Set Up Python
         uses: actions/setup-python@v2
         with:
-          python-version: 3.13.5
+          python-version: 3.14.0
 
       - name: Create Virtual Environment
         run: |
