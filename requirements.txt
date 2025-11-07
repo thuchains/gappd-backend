@@ -28,6 +28,9 @@ marshmallow-sqlalchemy==1.4.2
 mdurl==0.1.2
 ordered-set==4.1.0
 packaging==25.0
+psycopg==3.2.12
+psycopg-binary==3.2.12
+psycopg2-binary==2.9.11
 pyasn1==0.6.1
 pydantic==2.12.3
 pydantic_core==2.41.4
