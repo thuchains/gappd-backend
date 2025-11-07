@@ -1,0 +1,21 @@
+swagger: '2.0'
+info:
+  title: "Gapp'd Social Media API"
+  description: "Used to connect motorcycle riders with eachother"
+  version: "0.0.1"
+
+host: "localhost:8000" #During development my API is served on my local host (will change when we go to prod)
+schemes:
+  - "http"
+consumes:
+  - "application/json" #recieves json data
+produces:
+  - "application/json" #produces json data
+
+securityDefinitions: #Describing how to add token auth to the endpoints
+  bearerAuth:
+    type: apiKey
+    name: Authorization
+    in: header
+
+paths:

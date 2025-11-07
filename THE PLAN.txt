@@ -1,0 +1,26 @@
+
+
+The Idea - Social media for motorcyclists
+
+Motorcyclists social media + meet up
+
+User Stories:
+- posting pictures/videos
+- interact w/ posts (comment, like)
+- follow other users
+- post bike meets/ group rides
+
+Admin Stories:
+- remove users and posts
+
+-----------------------------
+NavBar Component to route around pages
+-----------------------------
+
+Pages/ Views:
+- register / login
+- feed (posts)
+- local meetups
+- user profile
+
+
