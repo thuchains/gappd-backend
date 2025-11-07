@@ -287,7 +287,7 @@ paths: # Information about our routes
       tags:
         - Users
       summary: "Get profile picture"
-      description: "Returns the binary image for a user's profile picture"
+      description: "Returns the image for a user's profile picture"
       produces:
         - "image/jpeg"
         - "image/png"
@@ -307,7 +307,7 @@ paths: # Information about our routes
       tags:
         - Posts
       summary: "Create Post"
-      description: "Create a post with optional photos; accepts uploaded files and/or existing photo_ids"
+      description: "Create a post with optional photos, accepts uploaded files and/or existing photo_ids"
       security:
         - bearerAuth: []
       consumes:
@@ -382,7 +382,7 @@ paths: # Information about our routes
       tags:
         - Posts
       summary: "Update Post"
-      description: "Update a post; requires token"
+      description: "Update a post, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -406,7 +406,7 @@ paths: # Information about our routes
       tags:
         - Posts
       summary: "Delete a post"
-      description: "Delete a post; requires token"
+      description: "Delete a post, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -531,7 +531,7 @@ paths: # Information about our routes
       tags:
         - Comments
       summary: "Create Comment"
-      description: "Create a comment on a post; requires token"
+      description: "Create a comment on a post, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -572,7 +572,7 @@ paths: # Information about our routes
       tags:
         - Comments
       summary: "Update Comment"
-      description: "Update a comment; author only; requires token"
+      description: "Update a comment, creator only, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -596,7 +596,7 @@ paths: # Information about our routes
       tags:
         - Comments
       summary: "Delete Comment"
-      description: "Delete a comment; author or owner of the parent post; requires token"
+      description: "Delete a comment, creator or owner of the parent post, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -620,7 +620,7 @@ paths: # Information about our routes
       tags:
         - EventPosts
       summary: "Create Event Post"
-      description: "Create a new event post; requires token"
+      description: "Create a new event post, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -672,7 +672,7 @@ paths: # Information about our routes
       tags:
         - EventPosts
       summary: "Update Event Post"
-      description: "Update an event post; host only; requires token"
+      description: "Update an event post, host only, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -696,7 +696,7 @@ paths: # Information about our routes
       tags:
         - EventPosts
       summary: "Delete Event Post"
-      description: "Delete an event post; owner only; requires token"
+      description: "Event post owner can delete an event post, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -736,7 +736,7 @@ paths: # Information about our routes
       tags:
         - EventHosts
       summary: "Add cohost"
-      description: "Owner can add a cohost to the event; requires token"
+      description: "Event post owner can add a cohost to the event, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -761,7 +761,7 @@ paths: # Information about our routes
       tags:
         - EventHosts
       summary: "Remove cohost"
-      description: "Owner can remove a cohost; requires token"
+      description: "Owner can remove a cohost, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -787,7 +787,7 @@ paths: # Information about our routes
       tags:
         - EventRSVPs
       summary: "RSVP to event"
-      description: "Authenticated user RSVPs to an event; requires token"
+      description: "Authenticated user RSVPs to an event, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -808,7 +808,7 @@ paths: # Information about our routes
       tags:
         - EventRSVPs
       summary: "Remove RSVP"
-      description: "Authenticated user removes their RSVP; requires token"
+      description: "Authenticated user removes their RSVP, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -850,7 +850,7 @@ paths: # Information about our routes
       tags:
         - EventPosts
       summary: "Search events"
-      description: "Search by free-text and location; filter by datetime range; returns paginated results"
+      description: "Search by text and location, filter by datetime range, returns paginated results"
       parameters:
         - in: "query"
           name: "query_params"
@@ -897,7 +897,7 @@ paths: # Information about our routes
       tags:
         - EventRSVPs
       summary: "View my RSVPs"
-      description: "List events I have RSVP'd to; can filter for upcoming or past; requires token"
+      description: "List events I have RSVP'd to, can filter for upcoming or past, requires token"
       security:
         - bearerAuth: []
       parameters:
@@ -921,7 +921,7 @@ paths: # Information about our routes
       tags:
         - EventPosts
       summary: "Upload event post cover photo"
-      description: "Owner uploads a cover photo for the event; requires token"
+      description: "Event post owner uploads a cover photo for the event, requires token"
       security:
         - bearerAuth: []
       consumes:
@@ -948,7 +948,7 @@ paths: # Information about our routes
       tags:
         - Photos
       summary: "Upload photo to a post"
-      description: "Upload a new photo and associate it with a post; requires token"
+      description: "Upload a new photo and associate it with a post, requires token"
       security:
         - bearerAuth: []
       consumes:
@@ -973,7 +973,7 @@ paths: # Information about our routes
       tags:
         - Photos
       summary: "Delete photo"
-      description: "Delete a photo; only owner may delete; requires token"
+      description: "Delete a photo, only owner may delete; requires token"
       security:
         - bearerAuth: []
       parameters:
