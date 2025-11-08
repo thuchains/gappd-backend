@@ -13,17 +13,27 @@ from werkzeug.utils import secure_filename
 #Create event post
 @event_posts_bp.route('', methods=['POST'])
 @token_required
-def create_event_post(current_user):
-    user_id = getattr(current_user, "id", current_user)
+def create_event_post():
+    user_id = request.user_id
+
+    payload = request.get_json()
+    if payload is None:
+        return jsonify({"message": "Invalid JSON body"})
+    payload["user_id"] = user_id
 
     try: 
-        data = event_post_schema.load(request.json)
+        data = event_post_schema.load(payload)
     except ValidationError as e:
         return jsonify(e.messages), 400
     
-    new_event_post = EventPosts(**data)
-    db.session.add(new_event_post)
-    db.session.commit()
+    try:
+        new_event_post = EventPosts(**data)
+        db.session.add(new_event_post)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": "Failed to create event post"}), 500
+    
     return event_post_schema.jsonify(new_event_post), 201
 
 
