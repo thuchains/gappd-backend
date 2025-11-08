@@ -28,7 +28,7 @@ def create_app(config_name):
     app.register_blueprint(users_bp, url_prefix='/users')
     app.register_blueprint(posts_bp, url_prefix='/posts')
     app.register_blueprint(comments_bp, url_prefix='/comments')
-    app.register_blueprint(event_posts_bp, url_prefix='/event_posts')
+    app.register_blueprint(event_posts_bp, url_prefix='/events')
     app.register_blueprint(photos_bp, url_prefix='/photos')
     app.register_blueprint(swagger_blueprint, url_prefix=SWAGGER_URL)
 
