@@ -74,7 +74,7 @@ def my_hosting(user_id):
 #View all event posts
 @event_posts_bp.route('', methods=['GET'])
 def read_all_event_posts():
-    event_posts = db.session.query(EventPosts), all()
+    event_posts = db.session.query(EventPosts). all()
 
 
 #Delete event post
@@ -245,7 +245,7 @@ def search_events():
     to_param = request.args.get("to")
     try:
         start_from = datetime.fromisoformat(from_param) if from_param else now
-        start_to = datetime.fromiseoformat(to_param) if to_param else None
+        start_to = datetime.fromisoformat(to_param) if to_param else None
     except ValueError:
         return jsonify({"message": "Invalid 'from' or 'to' datetime format"}), 400
 

@@ -7,8 +7,8 @@ from app.blueprints.posts import posts_bp
 from app.blueprints.comments import comments_bp
 from app.blueprints.event_posts import event_posts_bp
 from app.blueprints.photos import photos_bp
-from flask_cors import CORS
 from flask_swagger_ui import get_swaggerui_blueprint
+from flask_cors import CORS
 
 SWAGGER_URL = '/api/docs'
 API_URL = '/static/swagger.yaml'
