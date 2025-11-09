@@ -72,11 +72,13 @@ def my_hosting(user_id):
 
 
 #View all event posts
-@event_posts_bp.route('', methods=['GET'])
+@event_posts_bp.route('', methods=['GET', 'OPTIONS'])
 def read_all_event_posts():
+    if request.method == "OPTIONS":
+        return ("", 204)
     event_posts = db.session.query(EventPosts). all()
 
-    return jsonify(event_posts_schema.dump()), 200
+    return jsonify(event_posts_schema.dump(event_posts)), 200
 
 
 #Delete event post
