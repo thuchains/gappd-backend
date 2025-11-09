@@ -90,7 +90,7 @@ def get_post(post_id):
 
 
 #View posts in feed of people user follows(like a for you page)
-@posts_bp.route('/feed', methods=['GET'])
+@posts_bp.route('/feed', methods=['GET', 'OPTIONS'])
 @token_required
 def get_feed():
     user_id = request.user_id

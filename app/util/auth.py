@@ -29,6 +29,9 @@ def token_required(f):
             return jsonify({"message": "Missing or invalid Authorization header"}), 401
         token = auth.split(" ", 1)[1]
 
+        if request.method == "OPTIONS" :
+            return("", 204)
+
         try:
             data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
             print(data)
