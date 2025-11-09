@@ -76,6 +76,8 @@ def my_hosting(user_id):
 def read_all_event_posts():
     event_posts = db.session.query(EventPosts). all()
 
+    return jsonify(event_posts_schema.dump()), 200
+
 
 #Delete event post
 @event_posts_bp.route('<int:event_post_id>', methods=['DELETE'])
@@ -276,7 +278,7 @@ def search_events():
 
     pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
     return jsonify({
-        "items": event_post_schema.dump(pagination.items),
+        "items": event_posts_schema.dump(pagination.items),
         "page": pagination.page,
         "per_page": pagination.per_page,
         "total": pagination.total,
