@@ -138,7 +138,7 @@ class EventPosts(Base):
     __tablename__ = 'event_posts'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    cover_photo_id: Mapped[str] = mapped_column(ForeignKey("photos.id"), nullable=True)
+    cover_photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

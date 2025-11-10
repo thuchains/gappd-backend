@@ -13,40 +13,58 @@ from werkzeug.utils import secure_filename
 #Create post
 @posts_bp.route('', methods=['POST'])
 @token_required
-def create_post_json():
+def create_post():
     user_id = request.user_id
 
-    caption = request.form.get("caption")
-    location = request.form.get("location")
-    photo_ids = request.form.getlist("photo_ids")
+    if request.content_type and request.content_type.startswith("multipart/form-data"):
+        caption = request.form.get("caption")
+        location = request.form.get("location")
+        photo_ids = request.form.getlist("photo_ids")
 
-    new_post = Posts(user_id=user_id, caption=caption, location=location)
-    db.session.add(new_post)
-    db.session.flush()
+        new_post = Posts(user_id=user_id, caption=caption, location=location)
+        db.session.add(new_post)
+        db.session.flush()
 
-    for photo_id in photo_ids:
-        try:
-            photo_id_to_int = int(photo_id)
-        except (TypeError, ValueError):
-            db.session.rollback()
-            return jsonify({"message": f"Invalid photo id '{photo_id}'"}), 400
+        for photo_id in photo_ids:
+            try:
+                photo_id_to_int = int(photo_id)
+            except (TypeError, ValueError):
+                db.session.rollback()
+                return jsonify({"message": f"Invalid photo id '{photo_id}'"}), 400
+        
+            photo = Photos.query.get(photo_id_to_int)
+            if not photo:
+                db.session.rollback()
+                return jsonify({"message": f"Photo_id `{photo_id_to_int}` not found"}), 404
+            
+            photo.post_id = new_post.id
+            photo.user_id = user_id
 
-    if "files" in request.files:
         files = request.files.getlist("files")
-        for file in files:
+        for file in files or []:
             if not file or file.filename == "":
                 continue
-            photo = Photos(user_id=user_id, post_id=post.id, filename=secure_filename(file.filename), content_type=file.mimetype, file_data=file.read())
+            photo = Photos(user_id=user_id, post_id=new_post.id, filename=secure_filename(file.filename), content_type=file.mimetype, file_data=file.read())
+            db.session.add(photo)
+
+        db.session.commit()
+        return post_schema.jsonify(new_post), 201
+    
+    payload = request.get_json()
+    if payload is None:
+        return jsonify({"message": "Invalid JSON body"}), 400
+    payload["user_id"] = user_id
 
     try:
-        data = post_schema.load(request.json)
+        data = post_schema.load(payload)
     except ValidationError as e:
         return jsonify(e.messages), 400
-
-    new_post = Posts(**data)
-    db.session.add(new_post)
+    
+    post = Posts(**data)
+    db.session.add(post)
     db.session.commit()
-    return post_schema.jsonify(new_post), 201
+    return post_schema.jsonify(post), 201
+  
 
 
 #Search post by key words in caption
