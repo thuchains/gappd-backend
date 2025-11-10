@@ -26,31 +26,32 @@ def upload_post_photo(post_id):
     
 
     try:
-        if 'photo' not in request.files:
+        files = []
+        if 'photo' in request.files:
+            files = request.files.getlist('photos')
+        elif 'photo' in request.files:
+            files = [request.files['photo']]
+        else:
             return jsonify({"message": "No file provided"}), 400
         
-        file = request.files['photo']
+        saved = []
+        for file in files:
+            if not file or file.filename == '':
+                continue
 
-        if not file or file.filename == '':
-            return jsonify({"message": "No file selected"}), 400
+            photo = Photos(
+                user_id=user_id,
+                post_id=post_id,
+                filename=secure_filename(file.filename),
+                content_type = file.mimetype or 'image/jpeg',
+                file_data = file.read()
+            )
+        if not saved:
+            db.session.rollback()
+            return jsonify({"message": "No valid files"}), 400
         
-        file_data = file.read()
-
-        photo = Photos(
-            user_id=user_id,
-            post_id=post_id,
-            filename=file.filename,
-            content_type = file.content_type or 'image/jpeg',
-            file_data = file_data
-        )
-
-        db.session.add(photo)
         db.session.commit()
-        return jsonify({
-            "message": "Upload successful",
-            "photo_id": photo.id,
-            "filename": photo.filename
-        }), 201
+        return jsonify({"message": "Upload successfull", "photos": saved})
     
     except Exception as e:
         db.session.rollback()

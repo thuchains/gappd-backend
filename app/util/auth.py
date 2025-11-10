@@ -22,11 +22,11 @@ def token_required(f):
     @wraps(f)
     def decorations(*args, **kwargs):
 
-        token = None
-        
         if request.method == "OPTIONS" :
             return("", 204)
-
+        
+        token = None
+        
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return jsonify({"message": "Missing or invalid Authorization header"}), 401
