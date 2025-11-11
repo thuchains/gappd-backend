@@ -44,7 +44,7 @@ def create_post():
         for file in files or []:
             if not file or file.filename == "":
                 continue
-            photo = Photos(user_id=user_id, post_id=new_post.id, filename=secure_filename(file.filename), content_type=file.mimetype, file_data=file.read())
+            photo = Photos(user_id=user_id, post_id=new_post.id, filename=secure_filename(file.filename), content_type=file.mimetype or "image/jpeg", file_data=file.read())
             db.session.add(photo)
 
         db.session.commit()
@@ -117,16 +117,18 @@ def get_feed():
     per_page = 10
 
     followed_ids = db.session.execute(select(follows.c.followed_id).where(follows.c.follower_id == user_id)).scalars().all()
-    if not followed_ids:
-        return jsonify({
-            "items": [],
-            "page": page,
-            "per_page": per_page,
-            "total": 0,
-            "pages": 0
-        }), 200
+    # if not followed_ids:
+    #     return jsonify({
+    #         "items": [],
+    #         "page": page,
+    #         "per_page": per_page,
+    #         "total": 0,
+    #         "pages": 0
+    #     }), 200
     
-    qry = Posts.query.filter(Posts.user_id.in_(followed_ids)).order_by(Posts.created_at.desc())
+    visible_user_ids = set(followed_ids + [user_id])
+    
+    qry = Posts.query.filter(Posts.user_id.in_(visible_user_ids)).order_by(Posts.created_at.desc())
     pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
 
     return jsonify({
