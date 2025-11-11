@@ -1,7 +1,9 @@
 from app.extensions import ma
 from app.models import Posts
+from marshmallow import fields
 
 class PostSchema(ma.SQLAlchemyAutoSchema):
+    photos = fields.Nested("PhotoSchema", many=True)
 
     class Meta:
         model = Posts

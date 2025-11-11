@@ -128,7 +128,7 @@ def get_feed():
     
     visible_user_ids = set(followed_ids + [user_id])
     
-    qry = Posts.query.filter(Posts.user_id.in_(visible_user_ids)).order_by(Posts.created_at.desc())
+    qry = db.session.query(Posts).filter(Posts.user_id.in_(visible_user_ids)).order_by(Posts.created_at.desc())
     pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
 
     return jsonify({
@@ -137,6 +137,7 @@ def get_feed():
         "per_page": pagination.per_page,
         "total": pagination.total,
         "pages": pagination.pages
+
     }), 200
 
 
