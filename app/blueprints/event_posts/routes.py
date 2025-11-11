@@ -16,6 +16,7 @@ from werkzeug.utils import secure_filename
 def create_event_post():
     user_id = request.user_id
 
+    print("posting event")
     try:
         is_multipart = bool(request.content_type and request.content_type.startswith("multipart/form-data"))
         if is_multipart:
@@ -29,8 +30,10 @@ def create_event_post():
                 "state": (form.get("state") or "").strip(),
                 "zipcode": (form.get("zipcode") or "").strip(),
                 "country": (form.get("country") or "").strip(),
-                # "user_id": user_id,
             }
+            payload["user_id"] = user_id
+
+            # use chatgpt to standardize datetime
             start_time_value = payload.get("start_time")
             if start_time_value:
                 if len(start_time_value) == 10 and start_time_value[4] == "-" and start_time_value[7] == "-":
@@ -44,7 +47,6 @@ def create_event_post():
                     if dt.tzinfo is None:
                         dt = dt.replace(tzinfo=timezone.utc)
                     payload["start_time"] = dt
-
             try:
                 data = event_post_schema.load(payload)
             except ValidationError as e:
@@ -52,10 +54,15 @@ def create_event_post():
             
             cover_photo = request.files.get("cover_photo")
             if cover_photo and cover_photo.filename:
-                photo = Photos(user_id=user_id, filename=secure_filename(cover_photo.filename), content_type=cover_photo.file.mimetype, file_data=cover_photo.read())
+                photo = Photos(user_id=user_id, filename=secure_filename(cover_photo.filename), content_type=cover_photo.mimetype or 'image/jpeg', file_data=cover_photo.read())
                 db.session.add(photo)
-                db.session.flush()
-
+                db.session.commit()
+                payload['cover_photo_id'] = photo.id
+                event_post = EventPosts(**payload)
+                db.session.add(event_post)
+                db.session.commit()
+                return event_post_schema.jsonify(event_post), 201
+                
             event_post = EventPosts(**data)
             db.session.add(event_post)
             db.session.commit()
@@ -69,7 +76,7 @@ def create_event_post():
         start_time_value = (payload.get("start_time") or "").strip()
         if start_time_value:
             if len(start_time_value) == 10 and start_time_value[4] == "-" and start_time_value[7] =="-":
-                payload["start_time"] = datetime.strptime(st_val, "%Y-%m-%d").replace(
+                payload["start_time"] = datetime.strptime(start_time_value, "%Y-%m-%d").replace(
                     hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
                 )
             else:
@@ -106,6 +113,29 @@ def read_event(event_post_id):
     if not event:
         return jsonify({"message": "Event not found"}), 404
     return event_post_schema.jsonify(event), 200
+
+
+#view all event posts from a user
+@event_posts_bp.route('/by-username/<string:username>', methods=["GET"])
+def list_all_events_by_username(username):
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except ValueError:
+        page = 1
+    per_page = min(max(int(request.args.get("per_page", 12)), 1), 50)
+
+    date_range = (request.args.get("range") or "all").lower()
+    now = datetime.now(timezone.utc)
+
+    qry = (db.session.query(EventPosts).join(event_hosts, EventPosts.id == event_hosts.c.event_post_id).join(Users, Users.id == event_hosts.c.user_id).filter(Users.username==username).order_by(EventPosts.created_at.desc()))
+    pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        "items": event_posts_schema.dump(pagination.items),
+        "page": pagination.page,
+        "per_page": pagination.per_page,
+        "total": pagination.total,
+        "pages": pagination.pages
+    }), 200
 
 
 #Events I host
@@ -395,8 +425,10 @@ def upload_event_cover(event_post_id):
     event = db.session.get(EventPosts, event_post_id)
     if not event:
         return jsonify({"message": "Event post not found"}), 404
-    if event.user_id != user_id:
-        return jsonify({"message": "Forbidden, not allowed to modify this event"}), 403
+    
+    is_host = db.session.execute(select(event_hosts.c.user_id).where(event_hosts.c.event_post_id == event_post_id, event_hosts.c.user_id == user_id)).first() is not None
+    if not is_host:
+        return jsonify({"message": "Forbidden, must be a host to modify this event"}), 403
     
     if "photo" not in request.files:
         return jsonify({"message": "No file provided"}), 400

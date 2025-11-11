@@ -1,7 +1,7 @@
 import io
 from flask import request, jsonify, send_file
-from sqlalchemy import select, insert, delete
-from app.models import db, Users, follows, Photos
+from sqlalchemy import select, insert, delete, exists, func
+from app.models import db, Users, follows, Photos, event_hosts, event_rsvps, HostRole, EventPosts, Posts, Comments, post_likes
 from app.extensions import limiter, cache
 from app.blueprints.users import users_bp
 from app.blueprints.users.schemas import user_schema, users_schema, user_login_schema
@@ -37,54 +37,119 @@ def create_user():
     except ValidationError as e:
         return jsonify(e.messages), 400
     
+    print("load user schema")
+    
     if db.session.query(Users).filter(Users.email == data["email"]).first():
         return jsonify({"message": "Email already taken"}), 409
     if db.session.query(Users).filter(Users.username == data["username"]).first():
         return jsonify({"message": "Username already taken"}), 409
     
     data['password'] = generate_password_hash(data['password'])
-
+    print("hashed password")
     new_user = Users(**data)
     db.session.add(new_user)
     db.session.commit()
+
+    print("created user")
 
     response = user_schema.dump(new_user)
     return jsonify(response), 201
 
 
 #View another user (public profile)
-@users_bp.route('/<int:user_id>', methods=['GET'])
-def read_user(user_id):
-    user = db.session.get(Users, user_id)
-    if not user:
+@users_bp.route('/<string:username>', methods=['GET'])
+def read_user(username):
+    user_id = request.user_id
+    target = db.session.execute(select(Users).where(Users.username == username)).scalar_one_or_none()
+    if not target:
         return jsonify({"message": "User not found"}), 404
-    return user_schema.jsonify(user), 200
+    
+    posts_count = db.session.execute(select(func.count(Posts.id)).where(Posts.user_id == target.id)).scalar() or 0
+    events_count = db.session.execute(select(func.count(EventPosts.id)).where(EventPosts.user_id == target.id)).scalar() or 0
+    followers_count = db.session.execute(select(func.count(follows.c.follower_id)).where(follows.c.followed_id == target.id)).scalar() or 0
+    following_count = db.session.execute(select(func.count(follows.c.followed_id)).where(follows.c.follower_id == target.id)).scalar() or 0
+    is_following = False
+    if user_id and user_id != target.id:
+        is_following = db.session.execute(select(exists().where((follows.c.follower_id == user_id) & (follows.c.followed_id == target.id)))).scalar()
+    payload = user_schema.dump(target)
+    payload["counts"] = {
+        "posts": posts_count,
+        "events": events_count,
+        "followers": followers_count,
+        "following": following_count
+    }
+    payload["is_following"] = bool(is_following)
+    return jsonify(payload), 200
 
 
 #View self
 @users_bp.route('/me', methods=['GET'])
 @token_required
 def read_me():
+    print(request.user_id)
     user_id = request.user_id
     user = db.session.get(Users, user_id)
     if not user:
         return jsonify({"message": "User not found"}), 404
-    return user_schema.jsonify(user), 200
+    posts_count = db.session.execute(select(func.count(Posts.id)).where(Posts.user_id == user.id)).scalar() or 0
+    events_count = db.session.execute(select(func.count(EventPosts.id)).select_from(EventPosts).join(event_hosts, event_hosts.c.event_post_id == EventPosts.id).where(event_hosts.c.user_id == user.id)).scalar() or 0
+    followers_count = db.session.execute(select(func.count(follows.c.follower_id)).where(follows.c.followed_id == user.id)).scalar() or 0
+    following_count = db.session.execute(select(func.count(follows.c.followed_id)).where(follows.c.follower_id == user.id)).scalar() or 0
+
+    payload = user_schema.dump(user)
+    payload["counts"] = {
+        "posts": posts_count,
+        "events": events_count,
+        "followers": followers_count,
+        "following": following_count,
+    }
+    payload["is_following"] = False #users can't follow themselves
+
+    return jsonify(payload), 200
 
 
 #Delete user
 @users_bp.route('/me', methods=['DELETE'])
 @token_required
 def delete_user():
-    token_id = request.user_id
-
-    user = db.session.get(Users, token_id)
+    user_id = request.user_id
+    user = db.session.get(Users, user_id)
     if not user:
         return jsonify({"message": "User not found"}), 404
-    
-    db.session.delete(user)
-    db.session.commit()
-    return jsonify({"message": f"Successfully deleted user {token_id}"}), 200
+    try:
+        db.session.execute(follows.delete().where(follows.c.follower_id == user_id))
+        db.session.execute(follows.delete().where(follows.c.followed_id == user_id))
+        db.session.execute(event_rsvps.delete().where(event_rsvps.c.user_id == user_id))
+        db.session.execute(event_hosts.delete().where(event_hosts.c.user_id == user_id))
+
+        hostless_event_ids = db.session.query(EventPosts.id).outerjoin(event_hosts, EventPosts.id == event_hosts.c.event_post_id).filter(event_hosts.c.event_post_id.is_(None)).all()
+        if hostless_event_ids:
+            ids = [row[0] for row in hostless_event_ids]
+            cover_photo_ids = db.session.query(EventPosts.cover_photo_id).filter(EventPosts.id.in_(ids), EventPosts.cover_photo_id.isnot(None)).all()
+            if cover_photo_ids:
+                db.session.execute(Photos.__table__.delete().where(Photos.id.in_([p[0] for p in cover_photo_ids])))
+            db.session.query(EventPosts).filter(EventPosts.id.in_(ids)).delete(synchronize_session=False)
+        post_ids = [post_id for (post_id,) in db.session.query(Posts.id).filter(Posts.user_id == user_id).all()]
+        if post_ids:
+            db.session.execute(post_likes.delete().where(post_likes.c.post_id.in_(post_ids)))
+            db.session.query(Comments).filter(Comments.post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.session.query(Photos).filter(Photos.post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.session.query(Posts).filter(Posts.id.in_(post_ids)).delete(synchronize_session=False)
+
+        db.session.query(Comments).filter(Comments.user_id == user_id).delete(synchronize_session=False)
+        db.session.execute(post_likes.delete().where(post_likes.c.user_id == user_id))
+        db.session.query(Photos).filter(Photos.user_id == user_id).delete(synchronize_session=False)
+
+        user.profile_photo_id = None
+        db.session.add(user)
+        db.session.flush()
+
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"message": f"Successfully deleted user {user_id}"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": "Failed to delete user"}), 500
 
 
 #Update user
@@ -97,7 +162,7 @@ def update_user():
         return jsonify({"message": "User not found"}), 404
     
     try: 
-        user_data = user_schema.load(request.json)
+        user_data = user_schema.load(request.json or {}, partial=True)
     except ValidationError as e:
         return jsonify({"message": e.messages}), 400
     
@@ -311,7 +376,7 @@ def get_profile_photo(user_id):
         io.BytesIO(photo.file_data),
         mimetype=photo.content_type or "image/jpeg",
         as_attachment=False,
-        download_name=photo.filename or f"user_{id}_avatar.jpg"
+        user_id=photo.filename or f"user_{id}_avatar.jpg"
     )
 
 

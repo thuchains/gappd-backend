@@ -15,6 +15,8 @@ from werkzeug.utils import secure_filename
 @token_required
 def create_post():
     user_id = request.user_id
+    files = request.files
+
 
     if request.content_type and request.content_type.startswith("multipart/form-data"):
         caption = request.form.get("caption")
@@ -23,7 +25,7 @@ def create_post():
 
         new_post = Posts(user_id=user_id, caption=caption, location=location)
         db.session.add(new_post)
-        db.session.flush()
+        db.session.commit()
 
         for photo_id in photo_ids:
             try:
@@ -129,7 +131,9 @@ def get_feed():
     visible_user_ids = set(followed_ids + [user_id])
     
     qry = db.session.query(Posts).filter(Posts.user_id.in_(visible_user_ids)).order_by(Posts.created_at.desc())
+    print(qry)
     pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
+    print(pagination.items)
 
     return jsonify({
         "items": posts_schema.dump(pagination.items),

@@ -1,7 +1,9 @@
 from app.extensions import ma
+from marshmallow import fields
 from app.models import EventPosts
 
 class EventPostSchema(ma.SQLAlchemyAutoSchema):
+    cover_photo = fields.Nested("PhotoSchema")
 
     class Meta:
         model = EventPosts

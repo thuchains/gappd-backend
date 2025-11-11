@@ -34,3 +34,8 @@ def create_app(config_name):
 
     return app
 
+# CORS(
+#         app, 
+#         supports_credentials=True, 
+#         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+#     )
