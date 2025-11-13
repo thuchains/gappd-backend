@@ -59,18 +59,21 @@ def create_user():
 #View another user (public profile)
 @users_bp.route('/<string:username>', methods=['GET'])
 def read_user(username):
-    user_id = request.user_id
+    # user_id = request.user_id
+    user_id = getattr(request, "user_id", None)
     target = db.session.execute(select(Users).where(Users.username == username)).scalar_one_or_none()
     if not target:
         return jsonify({"message": "User not found"}), 404
     
-    posts_count = db.session.execute(select(func.count(Posts.id)).where(Posts.user_id == target.id)).scalar() or 0
-    events_count = db.session.execute(select(func.count(EventPosts.id)).where(EventPosts.user_id == target.id)).scalar() or 0
-    followers_count = db.session.execute(select(func.count(follows.c.follower_id)).where(follows.c.followed_id == target.id)).scalar() or 0
-    following_count = db.session.execute(select(func.count(follows.c.followed_id)).where(follows.c.follower_id == target.id)).scalar() or 0
+    posts_count = (db.session.execute(select(func.count(Posts.id)).where(Posts.user_id == target.id)).scalar() or 0)
+    events_count = (db.session.execute(select(func.count(EventPosts.id)).select_from(EventPosts).join(event_hosts, event_hosts.c.event_post_id == EventPosts.id).where(event_hosts.c.user_id == target.id)).scalar() or 0)
+    followers_count = (db.session.execute(select(func.count(follows.c.follower_id)).where(follows.c.followed_id == target.id)).scalar() or 0)
+    following_count = (db.session.execute(select(func.count(follows.c.followed_id)).where(follows.c.follower_id == target.id)).scalar() or 0)
+    
     is_following = False
     if user_id and user_id != target.id:
         is_following = db.session.execute(select(exists().where((follows.c.follower_id == user_id) & (follows.c.followed_id == target.id)))).scalar()
+    
     payload = user_schema.dump(target)
     payload["counts"] = {
         "posts": posts_count,
