@@ -1,6 +1,6 @@
-from flask import request, jsonify
+from flask import request, jsonify, url_for
 from sqlalchemy import select, insert, delete, func
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 from app.models import db, Posts, Users, follows, post_likes, Photos
 from app.extensions import limiter, cache
 from app.blueprints.posts import posts_bp
@@ -110,50 +110,105 @@ def get_post(post_id):
 
 
 #View posts in feed of people user follows(like a for you page)
-@posts_bp.route('/feed', methods=['GET', 'OPTIONS'])
+@posts_bp.route('/feed', methods=['GET'])
 @token_required
 def get_feed():
-    user_id = request.user_id
+    # ============== my original route ==============
+    # user_id = request.user_id
 
+    # page = max(int(request.args.get("page", 1)), 1)
+    # per_page = 10
+
+    # followed_ids = db.session.execute(select(follows.c.followed_id).where(follows.c.follower_id == user_id)).scalars().all()
+
+    # visible_user_ids = list(set((followed_ids or []) + [user_id]))
+    
+    # qry = db.session.query(Posts).filter(Posts.user_id.in_(visible_user_ids)).order_by(Posts.created_at.desc())
+    # pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
+
+    # return jsonify({
+    #     "items": posts_schema.dump(pagination.items),
+    #     "page": pagination.page,
+    #     "per_page": pagination.per_page,
+    #     "total": pagination.total,
+    #     "pages": pagination.pages
+
+    # }), 200
+    # ============== new route with help from chatGPT bc I couldn't get it to return my profile picture avatar ===========
+    user_id = request.user_id 
     page = max(int(request.args.get("page", 1)), 1)
-    per_page = 10
+    per_page = max(int(request.args.get("per_page", 10)), 1)
 
-    followed_ids = db.session.execute(select(follows.c.followed_id).where(follows.c.follower_id == user_id)).scalars().all()
-    # if not followed_ids:
-    #     return jsonify({
-    #         "items": [],
-    #         "page": page,
-    #         "per_page": per_page,
-    #         "total": 0,
-    #         "pages": 0
-    #     }), 200
-    
-    visible_user_ids = set(followed_ids + [user_id])
-    
-    qry = db.session.query(Posts).filter(Posts.user_id.in_(visible_user_ids)).order_by(Posts.created_at.desc())
-    print(qry)
-    pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
-    print(pagination.items)
+    followed_ids = db.session.execute(
+        select(follows.c.followed_id).where(follows.c.follower_id == user_id)
+    ).scalars().all()
+
+    qry = (
+        select(Posts)
+        .options(
+            joinedload(Posts.user),     
+            joinedload(Posts.photos),  
+        )
+        .order_by(Posts.created_at.desc())
+    )
+
+    if followed_ids:
+        qry = qry.where(Posts.user_id.in_(followed_ids))
+    else:
+        qry = qry.where(Posts.user_id == user_id)
+
+    pagination = db.paginate(qry, page=page, per_page=per_page, error_out=False)
+
+    items = []
+    for p in pagination.items:
+        user = p.user  
+        items.append({
+            "id": p.id,
+            "caption": p.caption,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "avatar_url": (
+                    url_for("users_bp.get_profile_photo", user_id=user.id, _external=True)
+                    if getattr(user, "profile_photo_id", None) else None
+                ),
+                "avatar_photo_id": getattr(user, "profile_photo_id", None),
+            },
+            "photos": [
+                {
+                    "id": ph.id,
+                    "url": url_for("photos_bp.get_photo", photo_id=ph.id, _external=True)
+                }
+                for ph in getattr(p, "photos", [])  # works even if relationship not set
+            ],
+        })
 
     return jsonify({
-        "items": posts_schema.dump(pagination.items),
+        "items": items,
         "page": pagination.page,
         "per_page": pagination.per_page,
         "total": pagination.total,
-        "pages": pagination.pages
-
+        "pages": pagination.pages,
     }), 200
 
 
 #View all post of a user(like viewing their profile)
 @posts_bp.route('/by-user/<int:user_id>', methods=['GET'])
 def get_posts_by_user(user_id):
-    page = max(int(request.args.get("page", 1)), 1)
-    per_page = 15
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except ValueError:
+        page = 1
+    try:
+        per_page = min(max(int(request.args.get("per_page", 15)), 1), 50)
+    except ValueError:
+        per_page = 15
 
-    qry = Posts.query.filter_by(user_id=user_id).order_by(Posts.created_at.desc())
-    pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
+    posts = (select(Posts).where(Posts.user_id == user_id).order_by(Posts.created_at.desc()))
 
+    pagination = db.paginate(posts, page=page, per_page=per_page, error_out=False)
+        
     return jsonify({
         "items": posts_schema.dump(pagination.items),
         "page": pagination.page,

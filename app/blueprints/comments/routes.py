@@ -1,4 +1,5 @@
 from flask import request, jsonify
+from sqlalchemy import select
 from app.models import db, Comments, Posts, Users
 from app.extensions import limiter, cache
 from app.blueprints.comments import comments_bp
@@ -9,43 +10,93 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 
 #Create comment
-@comments_bp.route('', methods=['POST'])
+@comments_bp.route('/by-post/<int:post_id>', methods=['POST'])
 @token_required
-def create_comment():
-    user = request.user_id
-    try:
-        data = comment_schema.load(request.json)
-    except ValidationError as e:
-        return jsonify(e.messages), 400
+def create_comment(post_id):
+    # user = request.user_id
+
+    # post = db.session.get(Posts, post_id)
+    # if not post:
+    #     return jsonify({"message": "Post not found"})
+    # try:
+    #     data = comment_schema.load(request.json)
+    # except ValidationError as e:
+    #     return jsonify(e.messages), 400
     
-    new_comment = Comments(**data)
-    db.session.add(new_comment)
+    # new_comment = Comments(**data)
+    # db.session.add(new_comment)
+    # db.session.commit()
+    # return comment_schema.jsonify(new_comment), 201
+
+    user_id = request.user_id
+
+    post = db.session.get(Posts, post_id)
+    if not post:
+        return jsonify({"message": "Post not found"}), 404
+
+    json_data = request.get_json() or {}
+    text = (json_data.get("text") or "").strip()
+
+    if not text:
+        return jsonify({"message": "Text is required"}), 400
+
+    comment = Comments(
+        post_id=post_id,
+        user_id=user_id,
+        comment=text,
+    )
+
+    db.session.add(comment)
     db.session.commit()
-    return comment_schema.jsonify(new_comment), 201
+
+    return comment_schema.jsonify(comment), 201
 
 
 #View all comments in a post
 @comments_bp.route('/by-post/<int:post_id>', methods=['GET'])
 def view_comments_of_post(post_id):
-    if not db.session.get(Posts, post_id):
-        return jsonify({"message": "Post not found"})
+    # if not db.session.get(Posts, post_id):
+    #     return jsonify({"message": "Post not found"}), 400
     
+    # try:
+    #     page = max(int(request.args.get("page", 1)), 1)
+    # except ValueError:
+    #     page = 1
+
+    # per_page = 40
+
+    # qry = (Comments.query.filter(Comments.post_id == post_id).order_by(Comments.created_at.asc(), Comments.id.asc()))
+    
+    # pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
+    # return jsonify({
+    #     "items": comments_schema.dump(pagination.items),
+    #     "page": pagination.page,
+    #     "per_page": pagination.per_page,
+    #     "total": pagination.total,
+    #     "pages": pagination.pages
+    # }), 200
+    if not db.session.get(Posts, post_id):
+        return jsonify({"message": "Post not found"}), 404
+
     try:
         page = max(int(request.args.get("page", 1)), 1)
     except ValueError:
-        page=1
+        page = 1
 
     per_page = 40
 
-    qry = (Comments.query.filter(Comments.post_id == post_id).order_by(Comments.created_at.asc(), Comments.id.asc()))
-    
-    pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
+    qry = (select(Comments).where(Comments.post_id == post_id).order_by(Comments.created_at.asc(), Comments.id.asc())
+    )
+
+    comments = db.session.scalars(qry).all()
+    total = len(comments)
+
     return jsonify({
-        "items": comments_schema.dump(pagination.items),
-        "page": pagination.page,
-        "per_page": pagination.per_page,
-        "total": pagination.total,
-        "pages": pagination.pages
+        "items": comments_schema.dump(comments),
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "pages": 1  
     }), 200
 
 

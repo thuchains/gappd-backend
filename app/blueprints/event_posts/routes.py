@@ -1,5 +1,6 @@
 from flask import request, jsonify
 from sqlalchemy import select, insert, delete, or_
+from sqlalchemy.orm import joinedload
 from datetime import datetime, timezone
 from app.models import db, EventPosts, Users, event_hosts, event_rsvps, HostRole, Photos
 from app.extensions import limiter, cache
@@ -14,95 +15,166 @@ from werkzeug.utils import secure_filename
 @event_posts_bp.route('', methods=['POST'])
 @token_required
 def create_event_post():
-    user_id = request.user_id
+    # user_id = request.user_id
 
-    print("posting event")
+    # try:
+    #     is_multipart = bool(request.content_type and request.content_type.startswith("multipart/form-data"))
+    #     if is_multipart:
+    #         form = request.form
+    #         payload = {
+    #             "title": (form.get("title") or "").strip(),
+    #             "description": (form.get("description") or "").strip(),
+    #             "start_time": (form.get("start_time") or "").strip(),  # may be "YYYY-MM-DD" or ISO datetime
+    #             "street_address": (form.get("street_address") or None),
+    #             "city": (form.get("city") or "").strip(),
+    #             "state": (form.get("state") or "").strip(),
+    #             "zipcode": (form.get("zipcode") or "").strip(),
+    #             "country": (form.get("country") or "").strip(),
+    #         }
+    #         payload["user_id"] = user_id
+
+    #         # use chatgpt to standardize datetime
+    #         start_time_value = payload.get("start_time")
+    #         if start_time_value:
+    #             if len(start_time_value) == 10 and start_time_value[4] == "-" and start_time_value[7] == "-":
+    #                 payload["start_time"] = datetime.strptime(start_time_value, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+    #             else:
+    #                 try:
+    #                     dt = datetime.fromisoformat(start_time_value.replace("z", "+00:00"))
+    #                 except ValueError:
+    #                     return jsonify({"message": "Invalid start_time format"}), 400
+
+    #                 if dt.tzinfo is None:
+    #                     dt = dt.replace(tzinfo=timezone.utc)
+    #                 payload["start_time"] = dt
+    #         try:
+    #             data = event_post_schema.load(payload)
+    #         except ValidationError as e:
+    #             return jsonify(e.messages), 400
+            
+    #         cover_photo = request.files.get("cover_photo")
+    #         if cover_photo and cover_photo.filename:
+    #             photo = Photos(user_id=user_id, filename=secure_filename(cover_photo.filename), content_type=cover_photo.mimetype or 'image/jpeg', file_data=cover_photo.read())
+    #             db.session.add(photo)
+    #             db.session.commit()
+    #             payload['cover_photo_id'] = photo.id
+    #             event_post = EventPosts(**payload)
+    #             db.session.add(event_post)
+    #             db.session.commit()
+    #             return event_post_schema.jsonify(event_post), 201
+                
+    #         event_post = EventPosts(**data)
+    #         db.session.add(event_post)
+    #         db.session.commit()
+    #         return event_post_schema.jsonify(event_post), 201
+      
+    #     payload = request.get_json()
+    #     if payload is None:
+    #         return jsonify({"message": "Invalid JSON body"})
+    #     payload["user_id"] = user_id
+
+    #     start_time_value = (payload.get("start_time") or "").strip()
+    #     if start_time_value:
+    #         if len(start_time_value) == 10 and start_time_value[4] == "-" and start_time_value[7] =="-":
+    #             payload["start_time"] = datetime.strptime(start_time_value, "%Y-%m-%d").replace(
+    #                 hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+    #             )
+    #         else:
+    #             try:
+    #                 dt = datetime.fromisoformat(start_time_value.replace("z", "+00:00"))
+    #             except ValueError:
+    #                 return jsonify({"message": "Invalid start_time format."})
+    #             if dt.tzinfo is None:
+    #                 dt = dt.replace(tzinfo=timezone.utc)
+    #             payload["start_time"] = dt
+
+
+    #     try: 
+    #         data = event_post_schema.load(payload)
+    #     except ValidationError as e:
+    #         return jsonify(e.messages), 400
+        
+    #     event_post = EventPosts(**data)
+    #     db.session.add(event_post)
+    #     db.session.commit()
+    #     return event_post_schema.jsonify(event_post), 201
+        
+    # except Exception as e:
+    #     db.session.rollback()
+    #     return jsonify({"message": "Failed to create event post"}), 500
+
+    user_id = request.user_id
     try:
         is_multipart = bool(request.content_type and request.content_type.startswith("multipart/form-data"))
+
         if is_multipart:
-            form = request.form
+            f = request.form
             payload = {
-                "title": (form.get("title") or "").strip(),
-                "description": (form.get("description") or "").strip(),
-                "start_time": (form.get("start_time") or "").strip(),  # may be "YYYY-MM-DD" or ISO datetime
-                "street_address": (form.get("street_address") or None),
-                "city": (form.get("city") or "").strip(),
-                "state": (form.get("state") or "").strip(),
-                "zipcode": (form.get("zipcode") or "").strip(),
-                "country": (form.get("country") or "").strip(),
+                "title": (f.get("title") or "").strip(),
+                "description": (f.get("description") or "").strip(),
+                "start_time": (f.get("start_time") or "").strip(),  # "YYYY-MM-DD" or ISO8601
+                "street_address": (f.get("street_address") or None),
+                "city": (f.get("city") or "").strip(),
+                "state": (f.get("state") or "").strip(),
+                "zipcode": (f.get("zipcode") or "").strip(),
+                "country": (f.get("country") or "").strip(),
             }
-            payload["user_id"] = user_id
+            new_cover = request.files.get("cover_photo")
+        else:
+            payload = request.get_json(silent=True) or {}
+            if not isinstance(payload, dict):
+                return jsonify({"message": "Invalid JSON body"}), 400
+            new_cover = None
 
-            # use chatgpt to standardize datetime
-            start_time_value = payload.get("start_time")
-            if start_time_value:
-                if len(start_time_value) == 10 and start_time_value[4] == "-" and start_time_value[7] == "-":
-                    payload["start_time"] = datetime.strptime(start_time_value, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
-                else:
-                    try:
-                        dt = datetime.fromisoformat(start_time_value.replace("z", "+00:00"))
-                    except ValueError:
-                        return jsonify({"message": "Invalid start_time format"}), 400
-
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    payload["start_time"] = dt
-            try:
-                data = event_post_schema.load(payload)
-            except ValidationError as e:
-                return jsonify(e.messages), 400
-            
-            cover_photo = request.files.get("cover_photo")
-            if cover_photo and cover_photo.filename:
-                photo = Photos(user_id=user_id, filename=secure_filename(cover_photo.filename), content_type=cover_photo.mimetype or 'image/jpeg', file_data=cover_photo.read())
-                db.session.add(photo)
-                db.session.commit()
-                payload['cover_photo_id'] = photo.id
-                event_post = EventPosts(**payload)
-                db.session.add(event_post)
-                db.session.commit()
-                return event_post_schema.jsonify(event_post), 201
-                
-            event_post = EventPosts(**data)
-            db.session.add(event_post)
-            db.session.commit()
-            return event_post_schema.jsonify(event_post), 201
-      
-        payload = request.get_json()
-        if payload is None:
-            return jsonify({"message": "Invalid JSON body"})
-        payload["user_id"] = user_id
-
-        start_time_value = (payload.get("start_time") or "").strip()
-        if start_time_value:
-            if len(start_time_value) == 10 and start_time_value[4] == "-" and start_time_value[7] =="-":
-                payload["start_time"] = datetime.strptime(start_time_value, "%Y-%m-%d").replace(
+        start_time = (payload.get("start_time") or "").strip()
+        if start_time:
+            if len(start_time) == 10 and start_time[4] == "-" and start_time[7] == "-":
+                payload["start_time"] = datetime.strptime(start_time, "%Y-%m-%d").replace(
                     hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
                 )
             else:
                 try:
-                    dt = datetime.fromisoformat(start_time_value.replace("z", "+00:00"))
+                    date = datetime.fromisoformat(start_time.replace("Z", "+00:00").replace("z", "+00:00"))
                 except ValueError:
-                    return jsonify({"message": "Invalid start_time format."})
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                payload["start_time"] = dt
+                    return jsonify({"message": "Invalid start_time format"}), 400
+                if date.tzinfo is None:
+                    date = date.replace(tzinfo=timezone.utc)
+                payload["start_time"] = date
 
-
-        try: 
+        try:
             data = event_post_schema.load(payload)
         except ValidationError as e:
-            return jsonify(e.messages), 400
-        
+            return jsonify({"errors": e.messages}), 400
+
+        if new_cover and new_cover.filename:
+            photo = Photos(
+                user_id=user_id,
+                filename=secure_filename(new_cover.filename),
+                content_type=new_cover.mimetype or "image/jpeg",
+                file_data=new_cover.read(),
+            )
+            db.session.add(photo)
+            db.session.flush()                
+            data["cover_photo_id"] = photo.id  
+
         event_post = EventPosts(**data)
         db.session.add(event_post)
+        db.session.flush()  
+
+        db.session.execute(
+            event_hosts.insert().values(
+                user_id=user_id,
+                event_post_id=event_post.id,
+                role=HostRole.owner.value  
+            )
+        )
+
         db.session.commit()
         return event_post_schema.jsonify(event_post), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"message": "Failed to create event post"}), 500
-        
         
 
 
@@ -168,7 +240,10 @@ def my_hosting(user_id):
 def read_all_event_posts():
     if request.method == "OPTIONS":
         return ("", 204)
-    event_posts = db.session.query(EventPosts). all()
+    
+    # qry = (select(EventPosts).options(joinedload(EventPosts.cover_photo), joinedload(EventPosts.hosts)).order_by(EventPosts.created_at.desc()))
+    # event_posts = db.session.execute(qry).scalars().all()
+    event_posts = db.session.query(EventPosts).all()
 
     return jsonify(event_posts_schema.dump(event_posts)), 200
 

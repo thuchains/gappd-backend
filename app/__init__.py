@@ -23,7 +23,11 @@ def create_app(config_name):
     ma.init_app(app)
     limiter.init_app(app)
     cache.init_app(app)
-    CORS(app)
+    CORS(
+            app, 
+            supports_credentials=True, 
+            methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+        )
 
     app.register_blueprint(users_bp, url_prefix='/users')
     app.register_blueprint(posts_bp, url_prefix='/posts')

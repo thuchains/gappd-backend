@@ -82,18 +82,21 @@ def delete_photo(photo_id):
 
 
 #============ probably don't need since photos can be grabbed from posts routes ==============
-# #Get photo
-# @photos_bp.route('/api/photo/<int:photo_id>', methods=['GET'])
-# def get_photo(photo_id):
-#     photo = db.session.get(Photos, photo_id)
+#Get photo
+@photos_bp.route('/<int:photo_id>', methods=['GET'])
+def get_photo(photo_id):
+    photo = db.session.get(Photos, photo_id)
 
-#     if not photo:
-#         return jsonify({"message": "Photo not found"}), 404
-#     return send_file(
-#         io.BytesIO(photo.file_data),
-#         mimetype=photo.content_type,
-#         as_attachment=False
-#     )
+    if not photo:
+        return jsonify({"message": "Photo not found"}), 404
+    return send_file(
+        io.BytesIO(photo.file_data),
+        mimetype=photo.content_type or "image/jpeg",
+        as_attachment=False,
+        download_name=photo.filename or f"photo_{photo_id}.jpg",
+        max_age=3600,
+        last_modified=photo.upload_date
+    )
 
 
 # #View all photos

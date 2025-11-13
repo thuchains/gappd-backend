@@ -187,22 +187,41 @@ def update_user():
 #Search user by username
 @users_bp.route('/search', methods=['GET'])
 def search_user():
-    payload = request.get_json()
-    username = request.args.get("username") or payload.get("username")
+    # payload = request.get_json()
+    # username = request.args.get("username") or payload.get("username")
+    # if not username:
+    #     return jsonify({"message": "Username is required"}), 400
+    
+    # user = db.session.execute(select(Users).where(Users.username == username)).scalars().first()
+    
+    # if not user:
+    #     return jsonify({"message": "User not found"}), 404
+    
+    # return jsonify({
+    #     "id": user.id,
+    #     "username": user.username,
+    #     "profile_photo_id": user.profile_photo_id
+    # }), 200
+
+    username = (request.args.get("username") or request.args.get("q") or "").strip()
+    
     if not username:
         return jsonify({"message": "Username is required"}), 400
-    
-    user = db.session.execute(select(Users).where(Users.username == username)).scalars().first()
-    
-    if not user:
-        return jsonify({"message": "User not found"}), 404
-    
-    return jsonify({
-        "id": user.id,
-        "username": user.username,
-        "profile_photo_id": user.profile_photo_id
-    }), 200
 
+    like_pattern = f"%{username}%"
+
+    users = (
+        db.session.query(Users)
+        .filter(Users.username.ilike(like_pattern))
+        .order_by(Users.username.asc())
+        .limit(30)
+        .all()
+    )
+
+    # Always return an array, even if empty
+    return jsonify({
+        "users": users_schema.dump(users)
+    }), 200
 
 #Follow a user
 @users_bp.route('/<int:target_id>/follow', methods=['POST'])
@@ -376,7 +395,8 @@ def get_profile_photo(user_id):
         io.BytesIO(photo.file_data),
         mimetype=photo.content_type or "image/jpeg",
         as_attachment=False,
-        user_id=photo.filename or f"user_{id}_avatar.jpg"
+        download_name=photo.filename or f"user_{user_id}_avatar.jpg",
+        last_modified=photo.upload_date
     )
 
 
