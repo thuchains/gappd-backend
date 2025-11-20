@@ -1,14 +1,16 @@
 from flask import request, jsonify, url_for
-from sqlalchemy import select, insert, delete, func
+from sqlalchemy import select, insert, delete, func, exists
 from sqlalchemy.orm import selectinload, joinedload
 from app.models import db, Posts, Users, follows, post_likes, Photos
 from app.extensions import limiter, cache
 from app.blueprints.posts import posts_bp
 from app.blueprints.posts.schemas import posts_schema, post_schema
+from app.blueprints.users.schemas import user_schema
 from marshmallow import ValidationError
-from app.util.auth import encode_token, token_required
+from app.util.auth import encode_token, token_required, SECRET_KEY
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from jose import jwt as jose_jwt, exceptions as jose_exceptions
 
 #Create post
 @posts_bp.route('', methods=['POST'])
@@ -103,10 +105,36 @@ def search_posts():
 #View individual post
 @posts_bp.route('/<int:post_id>', methods=['GET'])
 def get_post(post_id):
-    post = db.session.get(Posts, post_id)
+    post = (db.session.query(Posts).options(joinedload(Posts.user)).get(post_id))
     if not post: 
         return jsonify({"message": "Post not found"}), 404
-    return post_schema.jsonify(post), 200
+
+    request_user_id = None
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1].strip()
+        if token:
+            try:
+                decoded = jose_jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+                request_user_id = int(decoded.get("sub"))
+            except (jose_exceptions.JWTError, ValueError):
+                request_user_id = None
+
+    data = post_schema.dump(post)
+    if post.user:
+        author_data = user_schema.dump(post.user)
+        if request_user_id and post.user.id != request_user_id:
+            is_following = db.session.execute(
+                select(exists().where(
+                    (follows.c.follower_id == request_user_id) &
+                    (follows.c.followed_id == post.user.id)
+                ))
+            ).scalar()
+            author_data["is_following"] = bool(is_following)
+        else:
+            author_data["is_following"] = False
+        data["author"] = author_data
+    return jsonify(data), 200
 
 
 #View posts in feed of people user follows(like a for you page)
@@ -135,61 +163,127 @@ def get_feed():
 
     # }), 200
     # ============== new route with help from chatGPT bc I couldn't get it to return my profile picture avatar ===========
-    user_id = request.user_id 
-    page = max(int(request.args.get("page", 1)), 1)
-    per_page = max(int(request.args.get("per_page", 10)), 1)
+    # user_id = request.user_id 
+    # page = max(int(request.args.get("page", 1)), 1)
+    # per_page = max(int(request.args.get("per_page", 10)), 1)
 
+    # followed_ids = db.session.execute(
+    #     select(follows.c.followed_id).where(follows.c.follower_id == user_id)
+    # ).scalars().all()
+
+    # qry = (select(Posts).options(joinedload(Posts.user), joinedload(Posts.photos)).order_by(Posts.created_at.desc()))
+
+    # if followed_ids:
+    #     qry = qry.where(Posts.user_id.in_(followed_ids))
+    # else:
+    #     qry = qry.where(Posts.user_id == user_id)
+
+    # pagination = db.paginate(qry, page=page, per_page=per_page, error_out=False)
+
+    # items = []
+    # for p in pagination.items:
+    #     user = p.user  
+    #     items.append({
+    #         "id": p.id,
+    #         "caption": p.caption,
+    #         "created_at": p.created_at.isoformat() if p.created_at else None,
+    #         "user": {
+    #             "id": user.id,
+    #             "username": user.username,
+    #             "avatar_url": (
+    #                 url_for("users_bp.get_profile_photo", user_id=user.id, _external=True)
+    #                 if getattr(user, "profile_photo_id", None) else None
+    #             ),
+    #             "avatar_photo_id": getattr(user, "profile_photo_id", None),
+    #         },
+    #         "photos": [
+    #             {
+    #                 "id": ph.id,
+    #                 "url": url_for("photos_bp.get_photo", photo_id=ph.id, _external=True)
+    #             }
+    #             for ph in getattr(p, "photos", [])  # works even if relationship not set
+    #         ],
+    #     })
+
+    # return jsonify({
+    #     "items": items,
+    #     "page": pagination.page,
+    #     "per_page": pagination.per_page,
+    #     "total": pagination.total,
+    #     "pages": pagination.pages,
+    # }), 200
+
+
+    # #============== returns follow status ============
+    user_id = request.user_id
+
+    page = max(int(request.args.get("page", 1)), 1)
+    per_page = 10
+
+    # IDs the current user follows
     followed_ids = db.session.execute(
         select(follows.c.followed_id).where(follows.c.follower_id == user_id)
     ).scalars().all()
 
+    visible_user_ids = set(followed_ids + [user_id])
+
+    if not visible_user_ids:
+        return jsonify({
+            "items": [],
+            "page": page,
+            "per_page": per_page,
+            "total": 0,
+            "pages": 0
+        }), 200
+
+    # Query posts from followed users + self
     qry = (
-        select(Posts)
-        .options(
-            joinedload(Posts.user),     
-            joinedload(Posts.photos),  
-        )
+        db.session.query(Posts)
+        .filter(Posts.user_id.in_(visible_user_ids))
         .order_by(Posts.created_at.desc())
     )
 
-    if followed_ids:
-        qry = qry.where(Posts.user_id.in_(followed_ids))
-    else:
-        qry = qry.where(Posts.user_id == user_id)
+    pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
 
-    pagination = db.paginate(qry, page=page, per_page=per_page, error_out=False)
+    posts = pagination.items
+    posts_data = posts_schema.dump(posts)
 
-    items = []
-    for p in pagination.items:
-        user = p.user  
-        items.append({
-            "id": p.id,
-            "caption": p.caption,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "avatar_url": (
-                    url_for("users_bp.get_profile_photo", user_id=user.id, _external=True)
-                    if getattr(user, "profile_photo_id", None) else None
-                ),
-                "avatar_photo_id": getattr(user, "profile_photo_id", None),
-            },
-            "photos": [
-                {
-                    "id": ph.id,
-                    "url": url_for("photos_bp.get_photo", photo_id=ph.id, _external=True)
-                }
-                for ph in getattr(p, "photos", [])  # works even if relationship not set
-            ],
-        })
+    followed_set = set(followed_ids)
+
+    # Attach a proper author object & follow status
+    for idx, post in enumerate(posts):
+      p = posts_data[idx]
+      author = post.user  # SQLAlchemy relationship
+
+      if author is not None:
+          p["author"] = {
+              "id": author.id,
+              "username": author.username,
+              "first_name": author.first_name,
+              "last_name": author.last_name,
+              "profile_photo_id": author.profile_photo_id,
+              "is_following": bool(author.id in followed_set),
+          }
+      else:
+          # fallback, shouldn't really happen
+          p.setdefault("author", {
+              "id": p.get("user_id"),
+              "username": p.get("username"),
+              "first_name": None,
+              "last_name": None,
+              "profile_photo_id": None,
+              "is_following": False,
+          })
+
+      # optional flat flag if you still want it:
+      p["author_is_following"] = p["author"]["is_following"]
 
     return jsonify({
-        "items": items,
+        "items": posts_data,
         "page": pagination.page,
         "per_page": pagination.per_page,
         "total": pagination.total,
-        "pages": pagination.pages,
+        "pages": pagination.pages
     }), 200
 
 
@@ -332,7 +426,6 @@ def list_post_likes(current_user, post_id):
         "total": pagination.total,
         "pages": pagination.pages
     }), 200
-
 
 
 

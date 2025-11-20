@@ -6,9 +6,11 @@ from app.extensions import limiter, cache
 from app.blueprints.users import users_bp
 from app.blueprints.users.schemas import user_schema, users_schema, user_login_schema
 from marshmallow import ValidationError
-from app.util.auth import encode_token, token_required
+from app.util.auth import encode_token, token_required, SECRET_KEY
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from jose import jwt as jose_jwt, exceptions as jose_exceptions
+from jose import jwt 
 
 #Login
 @users_bp.route('/login',  methods=['POST'])
@@ -58,32 +60,102 @@ def create_user():
 
 #View another user (public profile)
 @users_bp.route('/<string:username>', methods=['GET'])
+@token_required
 def read_user(username):
     # user_id = request.user_id
+    # user_id = getattr(request, "user_id", None)
+    # target = db.session.execute(select(Users).where(Users.username == username)).scalar_one_or_none()
+    # if not target:
+    #     return jsonify({"message": "User not found"}), 404
+    
+    # posts_count = (db.session.execute(select(func.count(Posts.id)).where(Posts.user_id == target.id)).scalar() or 0)
+    # events_count = (db.session.execute(select(func.count(EventPosts.id)).select_from(EventPosts).join(event_hosts, event_hosts.c.event_post_id == EventPosts.id).where(event_hosts.c.user_id == target.id)).scalar() or 0)
+    # followers_count = (db.session.execute(select(func.count(follows.c.follower_id)).where(follows.c.followed_id == target.id)).scalar() or 0)
+    # following_count = (db.session.execute(select(func.count(follows.c.followed_id)).where(follows.c.follower_id == target.id)).scalar() or 0)
+    
+    # is_following = False
+    # if user_id and user_id != target.id:
+    #     is_following = db.session.execute(select(exists().where((follows.c.follower_id == user_id) & (follows.c.followed_id == target.id)))).scalar()
+    
+    # payload = user_schema.dump(target)
+    # payload["counts"] = {
+    #     "posts": posts_count,
+    #     "events": events_count,
+    #     "followers": followers_count,
+    #     "following": following_count
+    # }
+    # payload["is_following"] = bool(is_following)
+    # return jsonify(payload), 200
+
+    #========================== to also return follows and event hosts ===================
     user_id = getattr(request, "user_id", None)
-    target = db.session.execute(select(Users).where(Users.username == username)).scalar_one_or_none()
-    if not target:
+
+    target_user = (
+        db.session.execute(
+            select(Users).where(Users.username == username)
+        ).scalar_one_or_none()
+    )
+
+    if not target_user:
         return jsonify({"message": "User not found"}), 404
-    
-    posts_count = (db.session.execute(select(func.count(Posts.id)).where(Posts.user_id == target.id)).scalar() or 0)
-    events_count = (db.session.execute(select(func.count(EventPosts.id)).select_from(EventPosts).join(event_hosts, event_hosts.c.event_post_id == EventPosts.id).where(event_hosts.c.user_id == target.id)).scalar() or 0)
-    followers_count = (db.session.execute(select(func.count(follows.c.follower_id)).where(follows.c.followed_id == target.id)).scalar() or 0)
-    following_count = (db.session.execute(select(func.count(follows.c.followed_id)).where(follows.c.follower_id == target.id)).scalar() or 0)
-    
+
+    posts_count = (
+        db.session.execute(
+            select(func.count(Posts.id)).where(Posts.user_id == target_user.id)
+        ).scalar()
+        or 0
+    )
+
+    events_count = (
+        db.session.execute(
+            select(func.count(EventPosts.id))
+            .select_from(EventPosts)
+            .join(
+                event_hosts,
+                event_hosts.c.event_post_id == EventPosts.id
+            )
+            .where(event_hosts.c.user_id == target_user.id)
+        ).scalar()
+        or 0
+    )
+
+    followers_count = (
+        db.session.execute(
+            select(func.count(follows.c.follower_id))
+            .where(follows.c.followed_id == target_user.id)
+        ).scalar()
+        or 0
+    )
+
+    following_count = (
+        db.session.execute(
+            select(func.count(follows.c.followed_id))
+            .where(follows.c.follower_id == target_user.id)
+        ).scalar()
+        or 0
+    )
+
     is_following = False
-    if user_id and user_id != target.id:
-        is_following = db.session.execute(select(exists().where((follows.c.follower_id == user_id) & (follows.c.followed_id == target.id)))).scalar()
-    
-    payload = user_schema.dump(target)
+    if user_id and user_id != target_user.id:
+        is_following = db.session.execute(
+            select(
+                exists().where(
+                    (follows.c.follower_id == user_id)
+                    & (follows.c.followed_id == target_user.id)
+                )
+            )
+        ).scalar()
+
+    payload = user_schema.dump(target_user)
     payload["counts"] = {
         "posts": posts_count,
         "events": events_count,
         "followers": followers_count,
-        "following": following_count
+        "following": following_count,
     }
     payload["is_following"] = bool(is_following)
-    return jsonify(payload), 200
 
+    return jsonify(payload), 200
 
 #View self
 @users_bp.route('/me', methods=['GET'])
@@ -211,19 +283,30 @@ def search_user():
     if not username:
         return jsonify({"message": "Username is required"}), 400
 
-    like_pattern = f"%{username}%"
+    auth = request.headers.get("Authorization", "")
+    
+    owner_user_id = None
+    if auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1].strip()
+        try: 
+            data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            owner_user_id = int(data.get("sub"))
+        except (jose_exceptions.ExpiredSignatureError, jose_exceptions.JWTError, ValueError):
+            owner_user_id = None
 
     users = (
-        db.session.query(Users)
-        .filter(Users.username.ilike(like_pattern))
-        .order_by(Users.username.asc())
-        .limit(30)
-        .all()
-    )
+        db.session.query(Users).filter(Users.username.ilike(f"%{username}%")).order_by(Users.username.asc()).limit(30).all())
 
-    # Always return an array, even if empty
+    payload = []
+    for u in users:
+        data = user_schema.dump(u)
+        if owner_user_id and owner_user_id != u.id:
+            data["is_following"] = bool(db.session.execute(select(exists().where(follows.c.follower_id == owner_user_id) & (follows.c.followed_id == u.id))).scalar())
+        else:
+            data["is_following"] = False
+        payload.append(data)
     return jsonify({
-        "users": users_schema.dump(users)
+        "users": payload
     }), 200
 
 #Follow a user
@@ -401,5 +484,3 @@ def get_profile_photo(user_id):
         download_name=photo.filename or f"user_{user_id}_avatar.jpg",
         last_modified=photo.upload_date
     )
-
-

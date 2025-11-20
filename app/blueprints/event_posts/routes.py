@@ -1,15 +1,17 @@
 from flask import request, jsonify
-from sqlalchemy import select, insert, delete, or_
+from sqlalchemy import select, insert, delete, or_, exists
 from sqlalchemy.orm import joinedload
 from datetime import datetime, timezone
-from app.models import db, EventPosts, Users, event_hosts, event_rsvps, HostRole, Photos
+from app.models import db, EventPosts, Users, event_hosts, event_rsvps, HostRole, Photos, follows
 from app.extensions import limiter, cache
 from app.blueprints.event_posts import event_posts_bp
 from app.blueprints.event_posts.schemas import event_post_schema, event_posts_schema
 from marshmallow import ValidationError
-from app.util.auth import encode_token, token_required
+from app.util.auth import encode_token, token_required, SECRET_KEY
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from jose import jwt as jose_jwt, exceptions as jose_exceptions
+
 
 #Create event post
 @event_posts_bp.route('', methods=['POST'])
@@ -112,7 +114,7 @@ def create_event_post():
             payload = {
                 "title": (f.get("title") or "").strip(),
                 "description": (f.get("description") or "").strip(),
-                "start_time": (f.get("start_time") or "").strip(),  # "YYYY-MM-DD" or ISO8601
+                "start_time": (f.get("start_time") or "").strip(),  
                 "street_address": (f.get("street_address") or None),
                 "city": (f.get("city") or "").strip(),
                 "state": (f.get("state") or "").strip(),
@@ -240,12 +242,35 @@ def my_hosting(user_id):
 def read_all_event_posts():
     if request.method == "OPTIONS":
         return ("", 204)
-    
-    # qry = (select(EventPosts).options(joinedload(EventPosts.cover_photo), joinedload(EventPosts.hosts)).order_by(EventPosts.created_at.desc()))
-    # event_posts = db.session.execute(qry).scalars().all()
-    event_posts = db.session.query(EventPosts).all()
 
-    return jsonify(event_posts_schema.dump(event_posts)), 200
+    owner_user_id = None
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1].strip()
+        try:
+            data = jose_jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            owner_user_id = int(data.get("sub"))
+        except (jose_exceptions.ExpiredSignatureError, jose_exceptions.JWTError, ValueError):
+            owner_user_id = None
+
+    event_posts = db.session.query(EventPosts).all()
+    payload = []
+    for event in event_posts:
+        data = event_post_schema.dump(event)
+        if owner_user_id and data.get("hosts"):
+            for idx, host in enumerate(data["hosts"]):
+                host_id = host.get("id")
+                if host_id:
+                    host["is_following"] = bool(db.session.execute(
+                        select(exists().where(
+                            (follows.c.follower_id == owner_user_id) &
+                            (follows.c.followed_id == host_id)
+                        ))
+                    ).scalar())
+                    data["hosts"][idx] = host
+        payload.append(data)
+
+    return jsonify(payload), 200
 
 
 #Delete event post
@@ -353,7 +378,7 @@ def rsvp_event(event_post_id):
 
 
 #UnRSVP event
-@event_posts_bp.route('/<int:event_post_id>/rsvp', methods=['POST'])
+@event_posts_bp.route('/<int:event_post_id>/rsvp', methods=['DELETE'])
 @token_required
 def unrsvp_event(event_post_id):
     user_id = request.user_id
@@ -363,7 +388,7 @@ def unrsvp_event(event_post_id):
         return jsonify({"message": "Event not found"}), 404
 
     
-    db.session.execute(delete(event_rsvps).values(user_id=user_id, event_post_id=event_post_id))
+    db.session.execute(delete(event_rsvps).where(event_rsvps.c.user_id == user_id, event_rsvps.c.event_post_id == event_post_id))
     db.session.commit()
     return jsonify({"message": "Successfully removed RSVP"}), 201
 
@@ -410,15 +435,27 @@ def search_events():
     country = (request.args.get("country") or "").strip()
     zipcode = (request.args.get("zipcode") or "").strip()
 
-    #grabbed from and to for datetime format from chatgpt
+    #got this from ChatGPT to get my input for my search to work, needed to be converted
+    def parse_iso(value, fallback=None):
+        if not value:
+            return fallback
+        value = value.strip()
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
     now = datetime.now(timezone.utc)
     from_param = request.args.get("from")
     to_param = request.args.get("to")
-    try:
-        start_from = datetime.fromisoformat(from_param) if from_param else now
-        start_to = datetime.fromisoformat(to_param) if to_param else None
-    except ValueError:
-        return jsonify({"message": "Invalid 'from' or 'to' datetime format"}), 400
+    start_from = parse_iso(from_param, now)
+    start_to = parse_iso(to_param)
+    if from_param and start_from is None:
+        return jsonify({"message": "Invalid 'from' datetime format"}), 400
+    if to_param and start_to is None:
+        return jsonify({"message": "Invalid 'to' datetime format"}), 400
 
     try:
         page = max(int(request.args.get("page", 1)), 1)
@@ -427,7 +464,7 @@ def search_events():
 
     per_page = 10
 
-    qry = EventPosts.query
+    qry = db.session.query(EventPosts)
     if query_params:
         qry = qry.filter(or_(EventPosts.title.ilike(f"%{query_params}%"), EventPosts.description.ilike(f"%{query_params}%")))
     if city:
@@ -445,9 +482,36 @@ def search_events():
 
     qry = qry.order_by(EventPosts.start_time.asc())
 
+    #need since this route does not require a token
+    owner_user_id = None
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1].strip()
+        try:
+            data = jose_jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            owner_user_id = int(data.get("sub"))
+        except (jose_exceptions.ExpiredSignatureError, jose_exceptions.JWTError, ValueError):
+            owner_user_id = None
+
     pagination = qry.paginate(page=page, per_page=per_page, error_out=False)
+    items = []
+    for event in pagination.items:
+        data = event_post_schema.dump(event)
+        if owner_user_id and data.get("hosts"):
+            for idx, host in enumerate(data["hosts"]):
+                host_id = host.get("id")
+                if host_id:
+                    host["is_following"] = bool(db.session.execute(
+                        select(exists().where(
+                            (follows.c.follower_id == owner_user_id) &
+                            (follows.c.followed_id == host_id)
+                        ))
+                    ).scalar())
+                    data["hosts"][idx] = host
+        items.append(data)
+
     return jsonify({
-        "items": event_posts_schema.dump(pagination.items),
+        "items": items,
         "page": pagination.page,
         "per_page": pagination.per_page,
         "total": pagination.total,
@@ -548,13 +612,3 @@ def upload_event_cover(event_post_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"message": "Event cover picture upload failed"}), 500
-
-
-
-
-
-
-
-
-
-

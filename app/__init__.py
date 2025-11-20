@@ -1,6 +1,6 @@
 import os
 from flask import Flask
-from app.extensions import ma, limiter, cache
+from app.extensions import ma, cache, limiter
 from app.models import db
 from app.blueprints.users import users_bp
 from app.blueprints.posts import posts_bp
@@ -24,9 +24,9 @@ def create_app(config_name):
     limiter.init_app(app)
     cache.init_app(app)
     CORS(
-            app, 
-            supports_credentials=True, 
-            methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+        app, 
+        supports_credentials=True, 
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
         )
 
     app.register_blueprint(users_bp, url_prefix='/users')
