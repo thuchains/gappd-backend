@@ -24,7 +24,6 @@ def upload_post_photo(post_id):
     if post.user_id != user_id:
         return jsonify({"message": "Forbidden, cannot add photos to another user's post"}), 403
     
-
     try:
         files = []
         if 'photo' in request.files:
@@ -33,7 +32,7 @@ def upload_post_photo(post_id):
             files = [request.files['photo']]
         else:
             return jsonify({"message": "No file provided"}), 400
-        
+#got help from Dylan (CodingTemple instructor)
         saved = []
         for file in files:
             if not file or file.filename == '':
@@ -79,9 +78,6 @@ def delete_photo(photo_id):
         return jsonify({"message": "Delete failed"}), 500
 
 
-
-
-#============ probably don't need since photos can be grabbed from posts routes ==============
 #Get photo
 @photos_bp.route('/<int:photo_id>', methods=['GET'])
 def get_photo(photo_id):
@@ -98,6 +94,7 @@ def get_photo(photo_id):
         last_modified=photo.upload_date
     )
 
+#============ probably don't need since photos can be grabbed from posts routes ==============
 
 # #View all photos
 # @photos_bp.route('/api/photos', methods=['GET'])

@@ -163,64 +163,12 @@ def get_feed():
 
     # }), 200
     # ============== new route with help from chatGPT bc I couldn't get it to return my profile picture avatar ===========
-    # user_id = request.user_id 
-    # page = max(int(request.args.get("page", 1)), 1)
-    # per_page = max(int(request.args.get("per_page", 10)), 1)
 
-    # followed_ids = db.session.execute(
-    #     select(follows.c.followed_id).where(follows.c.follower_id == user_id)
-    # ).scalars().all()
-
-    # qry = (select(Posts).options(joinedload(Posts.user), joinedload(Posts.photos)).order_by(Posts.created_at.desc()))
-
-    # if followed_ids:
-    #     qry = qry.where(Posts.user_id.in_(followed_ids))
-    # else:
-    #     qry = qry.where(Posts.user_id == user_id)
-
-    # pagination = db.paginate(qry, page=page, per_page=per_page, error_out=False)
-
-    # items = []
-    # for p in pagination.items:
-    #     user = p.user  
-    #     items.append({
-    #         "id": p.id,
-    #         "caption": p.caption,
-    #         "created_at": p.created_at.isoformat() if p.created_at else None,
-    #         "user": {
-    #             "id": user.id,
-    #             "username": user.username,
-    #             "avatar_url": (
-    #                 url_for("users_bp.get_profile_photo", user_id=user.id, _external=True)
-    #                 if getattr(user, "profile_photo_id", None) else None
-    #             ),
-    #             "avatar_photo_id": getattr(user, "profile_photo_id", None),
-    #         },
-    #         "photos": [
-    #             {
-    #                 "id": ph.id,
-    #                 "url": url_for("photos_bp.get_photo", photo_id=ph.id, _external=True)
-    #             }
-    #             for ph in getattr(p, "photos", [])  # works even if relationship not set
-    #         ],
-    #     })
-
-    # return jsonify({
-    #     "items": items,
-    #     "page": pagination.page,
-    #     "per_page": pagination.per_page,
-    #     "total": pagination.total,
-    #     "pages": pagination.pages,
-    # }), 200
-
-
-    # #============== returns follow status ============
     user_id = request.user_id
 
     page = max(int(request.args.get("page", 1)), 1)
     per_page = 10
 
-    # IDs the current user follows
     followed_ids = db.session.execute(
         select(follows.c.followed_id).where(follows.c.follower_id == user_id)
     ).scalars().all()
@@ -236,7 +184,6 @@ def get_feed():
             "pages": 0
         }), 200
 
-    # Query posts from followed users + self
     qry = (
         db.session.query(Posts)
         .filter(Posts.user_id.in_(visible_user_ids))
@@ -250,33 +197,30 @@ def get_feed():
 
     followed_set = set(followed_ids)
 
-    # Attach a proper author object & follow status
     for idx, post in enumerate(posts):
-      p = posts_data[idx]
-      author = post.user  # SQLAlchemy relationship
+        p = posts_data[idx]
+        author = post.user  
 
-      if author is not None:
-          p["author"] = {
-              "id": author.id,
-              "username": author.username,
-              "first_name": author.first_name,
-              "last_name": author.last_name,
-              "profile_photo_id": author.profile_photo_id,
-              "is_following": bool(author.id in followed_set),
-          }
-      else:
-          # fallback, shouldn't really happen
-          p.setdefault("author", {
-              "id": p.get("user_id"),
-              "username": p.get("username"),
-              "first_name": None,
-              "last_name": None,
-              "profile_photo_id": None,
-              "is_following": False,
-          })
-
-      # optional flat flag if you still want it:
-      p["author_is_following"] = p["author"]["is_following"]
+        if author is not None:
+            p["author"] = {
+                "id": author.id,
+                "username": author.username,
+                "first_name": author.first_name,
+                "last_name": author.last_name,
+                "profile_photo_id": author.profile_photo_id,
+                "is_following": bool(author.id in followed_set),
+            }
+        else:
+            p.setdefault("author", {
+                "id": p.get("user_id"),
+                "username": p.get("username"),
+                "first_name": None,
+                "last_name": None,
+                "profile_photo_id": None,
+                "is_following": False,
+            })
+    
+        p["author_is_following"] = p["author"]["is_following"]
 
     return jsonify({
         "items": posts_data,
@@ -330,17 +274,20 @@ def delete_post(post_id):
 @posts_bp.route('/<int:post_id>', methods=['PUT'])
 @token_required
 def update_post(post_id):
-    user = request.user_id
+    user_id = request.user_id
     post = db.session.get(Posts, post_id)
     if not post:
         return jsonify({"message": "Post not found"}), 400
     
+    if post.user_id != user_id:
+        return jsonify({"message": "Forbidden, must be account owner to edit post."})
+    
     try:
-        post_data = posts_schema.load(request.json)
+        post_data = post_schema.load(request.json or {}, partial=True)
     except ValidationError as e:
         return jsonify({"message": e.messages}), 400
     
-    for key, value in post.items():
+    for key, value in post_data.items():
         setattr(post, key, value)
 
     db.session.commit()

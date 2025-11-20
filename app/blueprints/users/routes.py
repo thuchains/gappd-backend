@@ -12,6 +12,7 @@ from werkzeug.utils import secure_filename
 from jose import jwt as jose_jwt, exceptions as jose_exceptions
 from jose import jwt 
 
+
 #Login
 @users_bp.route('/login',  methods=['POST'])
 def login():
@@ -31,6 +32,7 @@ def login():
     
     return jsonify("Invalid email or password"), 403
 
+
 #Create user
 @users_bp.route('', methods=['POST'])
 def create_user():
@@ -38,21 +40,16 @@ def create_user():
         data = user_schema.load(request.json)
     except ValidationError as e:
         return jsonify(e.messages), 400
-    
-    print("load user schema")
-    
+        
     if db.session.query(Users).filter(Users.email == data["email"]).first():
         return jsonify({"message": "Email already taken"}), 409
     if db.session.query(Users).filter(Users.username == data["username"]).first():
         return jsonify({"message": "Username already taken"}), 409
     
     data['password'] = generate_password_hash(data['password'])
-    print("hashed password")
     new_user = Users(**data)
     db.session.add(new_user)
     db.session.commit()
-
-    print("created user")
 
     response = user_schema.dump(new_user)
     return jsonify(response), 201
@@ -110,41 +107,17 @@ def read_user(username):
         db.session.execute(
             select(func.count(EventPosts.id))
             .select_from(EventPosts)
-            .join(
-                event_hosts,
-                event_hosts.c.event_post_id == EventPosts.id
-            )
-            .where(event_hosts.c.user_id == target_user.id)
-        ).scalar()
-        or 0
-    )
+            .join(event_hosts, event_hosts.c.event_post_id == EventPosts.id).where(event_hosts.c.user_id == target_user.id)).scalar() or 0)
 
     followers_count = (
-        db.session.execute(
-            select(func.count(follows.c.follower_id))
-            .where(follows.c.followed_id == target_user.id)
-        ).scalar()
-        or 0
-    )
+        db.session.execute(select(func.count(follows.c.follower_id)).where(follows.c.followed_id == target_user.id)).scalar() or 0)
 
     following_count = (
-        db.session.execute(
-            select(func.count(follows.c.followed_id))
-            .where(follows.c.follower_id == target_user.id)
-        ).scalar()
-        or 0
-    )
+        db.session.execute(select(func.count(follows.c.followed_id)).where(follows.c.follower_id == target_user.id)).scalar() or 0)
 
     is_following = False
     if user_id and user_id != target_user.id:
-        is_following = db.session.execute(
-            select(
-                exists().where(
-                    (follows.c.follower_id == user_id)
-                    & (follows.c.followed_id == target_user.id)
-                )
-            )
-        ).scalar()
+        is_following = db.session.execute(select(exists().where((follows.c.follower_id == user_id) & (follows.c.followed_id == target_user.id)))).scalar()
 
     payload = user_schema.dump(target_user)
     payload["counts"] = {
@@ -156,6 +129,7 @@ def read_user(username):
     payload["is_following"] = bool(is_following)
 
     return jsonify(payload), 200
+
 
 #View self
 @users_bp.route('/me', methods=['GET'])
@@ -285,6 +259,7 @@ def search_user():
 
     auth = request.headers.get("Authorization", "")
     
+#need in order to identity user since route is not @token_required
     owner_user_id = None
     if auth.startswith("Bearer "):
         token = auth.split(" ", 1)[1].strip()
@@ -308,6 +283,7 @@ def search_user():
     return jsonify({
         "users": payload
     }), 200
+
 
 #Follow a user
 @users_bp.route('/<int:target_id>/follow', methods=['POST'])
